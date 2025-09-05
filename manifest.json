@@ -1,0 +1,8 @@
+{
+  "package": "gpt-judge",
+  "name": "GPT Judge (no server)",
+  "mod": 0,
+  "conflicts": [],
+  "min_point_version": 60
+  "config": {}
+}

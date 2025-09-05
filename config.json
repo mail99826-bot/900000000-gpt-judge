@@ -1,0 +1,12 @@
+{
+  "openai_api_key": "",
+  "model": "gpt-4o-mini",
+  "lang": "en",
+  "strictness": "medium",
+  "timeout_sec": 12,
+  "auto_answer": true,
+  "fields": {
+    "sentence_field": "Front",
+    "etalon_field": "Back"
+  }
+}
