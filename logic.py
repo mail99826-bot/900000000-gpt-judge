@@ -7,13 +7,19 @@ DEFAULT_CFG = {
     "strictness": "medium",
     "timeout_sec": 12,
     "auto_answer": True,
+    # Поля заметки
     "fields": {"sentence_field": "Front", "etalon_field": "Back"},
-    # необязательно, но удобно для защиты:
-    "deck_whitelist": [],  # ["EN::Translate"]  — работать только тут
-    "deck_blacklist": [],  # ["ES::*"]          — не работать тут
+    # (1) кеш ответов, сек (0 = выключить кеш)
+    "cache_ttl_sec": 600,
+    # (3) лимиты длины для ввода и эталона
+    "max_input_len": 800,
+    "max_gold_len": 800,
+    # Фильтры (необязательно использовать)
+    "deck_whitelist": [],  # ["EN::Translate"]
+    "deck_blacklist": [],  # ["ES::*"]
     "note_type_whitelist": [],  # ["Basic (type in the answer)"]
     "note_type_blacklist": [],
-    # сеть/ретраи:
+    # Сеть/ретраи
     "base_url": "https://api.openai.com",
     "retries": 2,
     "backoff_ms": [300, 800],
@@ -58,7 +64,7 @@ def _match_deck(name: str, pattern: str) -> bool:
 
 
 def is_deck_allowed(card, cfg) -> bool:
-    """true, если карта разрешена по спискам колод (whitelist/blacklist)."""
+    """True, если карта разрешена по спискам колод (whitelist/blacklist)."""
     name = _deck_name(card)
     wl = cfg.get("deck_whitelist") or []
     bl = cfg.get("deck_blacklist") or []
@@ -70,7 +76,7 @@ def is_deck_allowed(card, cfg) -> bool:
 
 
 def is_note_type_allowed(note, cfg) -> bool:
-    """true, если тип заметки разрешён."""
+    """True, если тип заметки разрешён."""
     try:
         m = mw.col.models.get(note.mid)
         mname = m.get("name", "")
