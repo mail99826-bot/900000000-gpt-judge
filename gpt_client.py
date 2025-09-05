@@ -1,39 +1,126 @@
-import json, ssl, urllib.request
+import json
+import ssl
+import time
+import urllib.error
+import urllib.request
 
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_UA = "Anki-GPT-Judge/0.2"
+# один общий opener для keep-alive и gzip
+_ctx = ssl.create_default_context()
+_opener = urllib.request.build_opener()
+_opener.addheaders = [
+    ("User-Agent", DEFAULT_UA),
+    ("Connection", "keep-alive"),
+    ("Accept-Encoding", "gzip"),
+    ("Content-Type", "application/json"),
+]
+
 
 def _post_json(url, body, headers, timeout):
-    data = json.dumps(body).encode("utf-8")
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    # headers дополняют _opener.addheaders; явные → приоритетны
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    ctx = ssl.create_default_context()
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+    with _opener.open(req, timeout=timeout) as r:
+        # handle gzip transparently: urllib does this automatically
         return json.loads(r.read().decode("utf-8"))
 
-def judge_text(user_text, gold_text, lang, strictness, model, timeout, api_key):
+
+def _sanitize_json_text(s: str) -> str:
+    s = s.strip()
+    if s.startswith("```"):
+        s = s.strip("`")
+        s = s.replace("json\n", "", 1)
+    return s.strip()
+
+
+def judge_text(
+    user_text: str,
+    gold_text: str,
+    lang: str,
+    strictness: str,
+    model: str,
+    timeout: int,
+    api_key: str,
+    base_url: str = "https://api.openai.com",
+    retries: int = 1,
+    backoff_ms=(400,),
+):
     if not api_key:
         raise RuntimeError("Не задан openai_api_key в конфиге")
 
-    sys_prompt = (
-        "You are a strict translation grader. Compare user's translation with the reference semantically. "
-        "Return ONLY JSON with keys: ease (1..4), comment. "
-        "Mapping: 4 Easy, 3 Good, 2 Hard, 1 Again."
-    )
-    user_prompt = f"Gold: {gold_text}\nUser: {user_text}"
-
+    url = f"{base_url.rstrip('/')}/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
+    # (1) сверхкороткие промпты + (8) просим короткий comment (≤12 слов)
+    sys_prompt = "Grade RU→EN vs reference. Return ONLY JSON {ease:1..4,comment<=12w}."
+    user_prompt = (
+        f"Gold:{gold_text}\nUser:{user_text}\nStrictness:{strictness}\nLang:{lang}"
+    )
+
     body = {
         "model": model,
         "temperature": 0.0,
+        "max_tokens": 32,  # (1) ограничение ответа
         "response_format": {"type": "json_object"},
         "messages": [
             {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ],
     }
 
-    resp = _post_json(OPENAI_URL, body, headers, timeout)
-    content = resp["choices"][0]["message"]["content"]
-    return json.loads(content)
+    attempt = 0
+    last_err = None
+    delays = list(backoff_ms) if isinstance(backoff_ms, (list, tuple)) else [400]
+
+    while attempt <= retries:
+        try:
+            resp = _post_json(url, body, headers, timeout)
+            content = resp["choices"][0]["message"]["content"]
+            txt = _sanitize_json_text(content)
+            data = json.loads(txt)
+
+            # нормализуем ease
+            e = data.get("ease", 0)
+            try:
+                e = int(e)
+            except Exception:
+                e = 0
+            data["ease"] = e if e in (1, 2, 3, 4) else 0
+
+            # (8) на всякий случай подрежем comment до ~12 слов
+            c = (data.get("comment") or "").strip()
+            if c:
+                words = c.split()
+                if len(words) > 12:
+                    c = " ".join(words[:12])
+                data["comment"] = c
+
+            return data
+
+        except urllib.error.HTTPError as he:
+            status = he.code
+            try:
+                err_body = he.read().decode("utf-8")
+            except Exception:
+                err_body = ""
+            if status in (401, 403):
+                raise RuntimeError("Auth error (проверь API ключ)") from he
+            if status == 429:
+                last_err = RuntimeError("Rate limit (429): слишком много запросов")
+            elif 500 <= status < 600:
+                last_err = RuntimeError(f"Server error {status}")
+            else:
+                raise RuntimeError(f"HTTP {status}: {err_body[:200]}") from he
+
+        except Exception as e:
+            last_err = e
+
+        # ретрай с бэкоффом
+        if attempt < retries:
+            time.sleep(delays[min(attempt, len(delays) - 1)] / 1000.0)
+        attempt += 1
+
+    raise last_err or RuntimeError("Неизвестная ошибка при обращении к GPT")

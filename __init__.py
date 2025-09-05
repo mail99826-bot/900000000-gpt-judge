@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import time
 
 from aqt import gui_hooks, mw
@@ -13,18 +14,26 @@ from .logic import (
     map_to_ease,
 )
 
-# ===== Внутренние структуры =====
-LAST_CALL = {}  # анти-дубль по (card.id + hash(user_text)) на коротком окне
-LAST_REQUEST_TS = 0.0  # анти-флуд по времени
-CACHE = {}  # (1) кеш ответов: key -> (ts, verdict_dict)
+# локальные состояния
+LAST_CALL = {}
+LAST_REQUEST_TS = 0.0
+CACHE = {}
 
-# ===== Порог для анти-дубля и анти-флуда (локальные, не в конфиге) =====
-MIN_INTERVAL_SEC = 2.0  # анти-флуд: не чаще одного запроса раз в N сек
-ANTI_DUP_WINDOW_SEC = 6.0  # анти-дубль: повторный Enter с тем же текстом в течение окна
+# параметры локальной защиты
+MIN_INTERVAL_SEC = 2.0
+ANTI_DUP_WINDOW_SEC = 6.0
+
+_ws_re = re.compile(r"\s+")
+
+
+def _norm(s: str) -> str:
+    # (2) жёсткий тримминг: пробелы, регистр
+    s = (s or "").strip()
+    s = _ws_re.sub(" ", s)
+    return s
 
 
 def _get_field(note, name: str) -> str:
-    """Безопасное получение значения поля заметки"""
     try:
         return (note[name] or "").strip()
     except KeyError:
@@ -32,7 +41,6 @@ def _get_field(note, name: str) -> str:
 
 
 def _post_to_card(context, msg: str):
-    """Показываем совет в тултипе и (если webview жив) прямо на карточке"""
     try:
         context.eval(
             f"if(window._ankiAddonCallback) _ankiAddonCallback({json.dumps(msg)});"
@@ -43,7 +51,6 @@ def _post_to_card(context, msg: str):
 
 
 def _in_review_state() -> bool:
-    """Работаем только в режиме Review (не в Preview/Browse)"""
     try:
         return (
             getattr(mw, "state", None) == "review"
@@ -56,12 +63,10 @@ def _in_review_state() -> bool:
 def on_js_message(handled, message, context):
     if not isinstance(message, str) or not message.startswith("judge:"):
         return handled
-
-    # только в режиме ревью
     if not _in_review_state():
         return (True, None)
 
-    # распарсим payload из JS
+    # payload
     try:
         payload = json.loads(message[len("judge:") :])
     except Exception:
@@ -75,22 +80,20 @@ def on_js_message(handled, message, context):
 
     cfg = get_cfg()
 
-    # проверка ключа заранее (чтобы не уходить в сеть впустую)
+    # ключ
     api_key = (cfg.get("openai_api_key") or "").strip()
     if not api_key:
         _post_to_card(context, "⚠ Укажи openai_api_key в настройках аддона")
         return (True, None)
 
-    # фильтры по колодам/типам (если заданы)
+    # фильтры
     note = card.note()
     if not is_deck_allowed(card, cfg) or not is_note_type_allowed(note, cfg):
         return (True, None)
 
-    # извлекаем поля
+    # поля
     gold = _get_field(note, cfg["fields"]["etalon_field"])
     user_text = (payload.get("text") or "").strip()
-
-    # пустые значения не отправляем
     if not user_text:
         return (True, None)
     if not gold:
@@ -99,19 +102,42 @@ def on_js_message(handled, message, context):
         )
         return (True, None)
 
-    # (3) лимиты длины: ВВОД
+    # (2) trimming + лимиты длины
+    user_text = _norm(user_text)
+    gold = _norm(gold)
+
     max_in = int(cfg.get("max_input_len", 800))
     if len(user_text) > max_in:
         user_text = user_text[:max_in]
         _post_to_card(context, f"Ввод длиннее {max_in} символов — обрезано")
 
-    # (3) лимиты длины: ЭТАЛОН
     max_gold = int(cfg.get("max_gold_len", 800))
     if len(gold) > max_gold:
         gold = gold[:max_gold]
         _post_to_card(context, f"Эталон длиннее {max_gold} символов — обрезано")
 
-    # анти-флуд по времени
+    # (3) fast-path: точное совпадение после нормализации → Easy; пустяк → Again
+    if user_text.lower() == gold.lower():
+        ease = 4
+        _post_to_card(context, "GPT(fast): exact match → Easy")
+        if cfg.get("auto_answer", True):
+            try:
+                mw.reviewer._answerCard(ease)
+            except Exception as e:
+                tooltip(f"Не удалось ответить: {e}")
+        return (True, None)
+
+    if len(user_text.split()) <= 1 and len(gold.split()) >= 3:
+        ease = 1
+        _post_to_card(context, "GPT(fast): too short vs reference → Again")
+        if cfg.get("auto_answer", True):
+            try:
+                mw.reviewer._answerCard(ease)
+            except Exception as e:
+                tooltip(f"Не удалось ответить: {e}")
+        return (True, None)
+
+    # анти-флуд: частота
     global LAST_REQUEST_TS
     now = time.time()
     if now - LAST_REQUEST_TS < MIN_INTERVAL_SEC:
@@ -119,13 +145,13 @@ def on_js_message(handled, message, context):
         return (True, None)
     LAST_REQUEST_TS = now
 
-    # анти-дубль по тому же тексту в коротком окне
+    # анти-дубль: тот же текст за короткое окно
     short_key = f"{card.id}:{hashlib.sha1(user_text.encode('utf8')).hexdigest()}"
     if short_key in LAST_CALL and now - LAST_CALL[short_key] < ANTI_DUP_WINDOW_SEC:
         return (True, None)
     LAST_CALL[short_key] = now
 
-    # (1) кеш: ключ на карту + комбинацию эталон/ответ пользователя
+    # (4) кеш: карта + gold + user_text
     cache_key = (
         f"{card.id}:{hashlib.sha1((gold + '|' + user_text).encode('utf8')).hexdigest()}"
     )
@@ -140,8 +166,10 @@ def on_js_message(handled, message, context):
                 if ease in (1, 2, 3, 4)
                 else "—"
             )
-            msg = f"GPT(кеш): {comment} → {label}" if comment else f"GPT(кеш) → {label}"
-            _post_to_card(context, msg)
+            _post_to_card(
+                context,
+                f"GPT(кеш): {comment} → {label}" if comment else f"GPT(кеш) → {label}",
+            )
             if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
                 try:
                     mw.reviewer._answerCard(ease)
@@ -149,10 +177,8 @@ def on_js_message(handled, message, context):
                     tooltip(f"Не удалось ответить: {e}")
             return (True, None)
 
-    # запоминаем карту, для которой уедет запрос (чтобы не нажать кнопку на другой)
     requested_card_id = card.id
 
-    # фоновая задача: вызов GPT
     def work():
         return judge_text(
             user_text=user_text,
@@ -160,47 +186,39 @@ def on_js_message(handled, message, context):
             lang=cfg.get("lang", "en"),
             strictness=cfg.get("strictness", "medium"),
             model=cfg.get("model", "gpt-4o-mini"),
-            timeout=cfg.get("timeout_sec", 12),
+            timeout=cfg.get("timeout_sec", 12),  # (7) таймаут контролируется конфигом
             api_key=api_key,
             base_url=cfg.get("base_url", "https://api.openai.com"),
-            retries=cfg.get("retries", 2),
-            backoff_ms=cfg.get("backoff_ms", [300, 800]),
+            retries=cfg.get("retries", 1),
+            backoff_ms=cfg.get("backoff_ms", [400]),
         )
 
     def on_done(fut):
-        # та ли ещё карта на экране?
         cur = getattr(mw.reviewer, "card", None)
         if not cur or cur.id != requested_card_id:
             return
-
         try:
             verdict = fut.result()
         except Exception as e:
-            msg = str(e)
-            low = msg.lower()
-            if "rate limit" in low or "429" in low:
-                _post_to_card(
-                    context,
-                    "⚠ Rate limit (429): слишком много запросов. Попробуй позже.",
-                )
-            elif "auth" in low or "401" in low or "403" in low:
+            msg = str(e).lower()
+            if "rate limit" in msg or "429" in msg:
+                _post_to_card(context, "⚠ Rate limit (429). Попробуй позже.")
+            elif "auth" in msg or "401" in msg or "403" in msg:
                 _post_to_card(context, "⚠ Ошибка авторизации (проверь API-ключ).")
-            elif "timeout" in low or "timed out" in low:
+            elif "timeout" in msg or "timed out" in msg:
                 _post_to_card(
-                    context,
-                    f"⌛ GPT не ответил за {cfg.get('timeout_sec', 12)} c. Оценка не поставлена.",
+                    context, f"⌛ GPT не ответил за {cfg.get('timeout_sec', 12)} c."
                 )
-            elif "json" in low:
+            elif "json" in msg:
                 _post_to_card(context, "⚠ Не удалось разобрать ответ GPT (JSON).")
             else:
-                _post_to_card(context, f"GPT недоступен: {msg}")
+                _post_to_card(context, f"GPT недоступен: {str(e)}")
             return
 
-        # сохраним в кеш
+        # сохранить в кеш
         if cache_ttl > 0:
             CACHE[cache_key] = (time.time(), verdict)
 
-        # нормальная ветка
         ease = map_to_ease(verdict.get("ease"))
         if ease not in (1, 2, 3, 4):
             _post_to_card(context, "⚠ Не удалось определить оценку. Кнопка не нажата.")
@@ -208,8 +226,9 @@ def on_js_message(handled, message, context):
 
         comment = (verdict.get("comment") or "").strip()
         label = ["Again", "Hard", "Good", "Easy"][ease - 1]
-        msg = f"GPT: {comment} → {label}" if comment else f"GPT → {label}"
-        _post_to_card(context, msg)
+        _post_to_card(
+            context, f"GPT: {comment} → {label}" if comment else f"GPT → {label}"
+        )
 
         if cfg.get("auto_answer", True):
             try:
@@ -222,7 +241,6 @@ def on_js_message(handled, message, context):
 
 
 def on_profile_loaded():
-    # раннее предупреждение, если ключ пустой
     cfg = get_cfg()
     if not (cfg.get("openai_api_key") or "").strip():
         tooltip("⚠ Укажи openai_api_key в настройках аддона")
