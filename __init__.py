@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 import time
+import unicodedata  # ⟵ новый импорт
 
 from aqt import gui_hooks, mw
 from aqt.utils import tooltip
@@ -24,6 +25,106 @@ MIN_INTERVAL_SEC = 2.0
 ANTI_DUP_WINDOW_SEC = 6.0
 
 _ws_re = re.compile(r"\s+")
+# убрать пробел перед знаками , . : ; ? !
+_p_space = re.compile(r"\s+([,.:;!?])")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FAST-PATH NORMALIZATION (all_safe only)
+# Идея: простить визуальную пунктуацию (точки/запятые/кавычки/скобки/хвостовые
+# знаки), но СОХРАНИТЬ:
+#  • апострофы и дефисы ВНУТРИ слова (don't, re-enter)
+#  • точку в числе (3.14)
+#  • двоеточие во времени (12:30)
+#  • слеш/дефис в датах и числовых диапазонах (12/09/2025, 2024-2025)
+_qmap = {
+    "«": '"',
+    "»": '"',
+    "„": '"',
+    "“": '"',
+    "”": '"',
+    "‟": '"',
+    "‹": "'",
+    "›": "'",
+    "‚": "'",
+    "‘": "'",
+    "’": "'",
+    "′": "'",
+    "‵": "'",
+    "❛": "'",
+    "❜": "'",
+}
+
+
+def _canon(s: str) -> str:
+    """Базовая канонизация: NFC, унификация кавычек, чистка пробелов/лишних пробелов перед знаками."""
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFC", s)
+    if any(ch in s for ch in _qmap):
+        s = "".join(_qmap.get(ch, ch) for ch in s)
+    s = s.strip()
+    s = _ws_re.sub(" ", s)
+    s = _p_space.sub(r"\1", s)
+    return s
+
+
+def _is_punct(ch: str) -> bool:
+    """Unicode категория 'P*' = пунктуация."""
+    return unicodedata.category(ch).startswith("P")
+
+
+def _all_safe_punct_drop(s: str) -> str:
+    """
+    Удаляем почти всю пунктуацию, НО сохраняем:
+      • 3.14 (точка внутри числа)
+      • 12:30 (двоеточие во времени)
+      • 12/09/2025 и 2024-2025 (дата/диапазон)
+      • don't / re-enter (апостроф/дефис внутри слова)
+    Всё прочее (запятые, кавычки, скобки, тире между словами, хвостовые .?!…) — убираем.
+    """
+    if not s:
+        return ""
+    out = []
+    n = len(s)
+    for i, ch in enumerate(s):
+        if not _is_punct(ch):
+            out.append(ch)
+            continue
+
+        prev = s[i - 1] if i > 0 else ""
+        nxt = s[i + 1] if i + 1 < n else ""
+
+        # десятичные числа (3.14) и время (12:30)
+        if ch in ".:" and prev.isdigit() and nxt.isdigit():
+            out.append(ch)
+            continue
+        # даты и числовые диапазоны: 12/09/2025, 2024-2025
+        if ch in "/-" and prev.isdigit() and nxt.isdigit():
+            out.append(ch)
+            continue
+        # внутрисловные апостроф/дефис: don't, re-enter
+        if ch in "'-" and prev.isalnum() and nxt.isalnum():
+            out.append(ch)
+            continue
+        # всё прочее — выбрасываем
+    return "".join(out)
+
+
+def fastpath_compare_all_safe(a: str, b: str) -> bool:
+    """
+    Единственный fast-path режим: all_safe.
+    Возвращает True, если строки эквивалентны после «безопасной» очистки пунктуации.
+    """
+    a = _canon(a)
+    b = _canon(b)
+    a = _all_safe_punct_drop(a)
+    b = _all_safe_punct_drop(b)
+    a = _ws_re.sub(" ", a).strip().lower()
+    b = _ws_re.sub(" ", b).strip().lower()
+    return a == b
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _norm(s: str) -> str:
@@ -116,10 +217,10 @@ def on_js_message(handled, message, context):
         gold = gold[:max_gold]
         _post_to_card(context, f"Эталон длиннее {max_gold} символов — обрезано")
 
-    # (3) fast-path: точное совпадение после нормализации → Easy; пустяк → Again
-    if user_text.lower() == gold.lower():
+    # (3) fast-path: безопасная нормализация пунктуации → Easy при совпадении
+    if fastpath_compare_all_safe(user_text, gold):
         ease = 4
-        _post_to_card(context, "GPT(fast): exact match → Easy")
+        _post_to_card(context, "GPT(fast): match (all_safe) → Easy")
         if cfg.get("auto_answer", True):
             try:
                 mw.reviewer._answerCard(ease)
@@ -127,6 +228,7 @@ def on_js_message(handled, message, context):
                 tooltip(f"Не удалось ответить: {e}")
         return (True, None)
 
+    # (доп. быстрый guard) слишком короткий ответ по сравнению с эталоном → Again
     if len(user_text.split()) <= 1 and len(gold.split()) >= 3:
         ease = 1
         _post_to_card(context, "GPT(fast): too short vs reference → Again")
