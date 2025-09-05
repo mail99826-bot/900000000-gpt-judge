@@ -4,22 +4,18 @@
   "lang": "en",
   "strictness": "medium",
   "timeout_sec": 12,
-  "auto_answer": False,
+  "auto_answer": false,
   "fields": {
     "sentence_field": "Front",
     "etalon_field": "Back"
   },
-  // (1) кеш ответов, секунд (0 = отключить кеш)
   "cache_ttl_sec": 600,
-  // (3) лимиты длины
   "max_input_len": 800,
   "max_gold_len": 800,
-  // Фильтры колод/типов (по желанию)
   "deck_whitelist": [],
   "deck_blacklist": [],
   "note_type_whitelist": [],
   "note_type_blacklist": [],
-  // Сеть
   "base_url": "https://api.openai.com",
   "retries": 2,
   "backoff_ms": [
