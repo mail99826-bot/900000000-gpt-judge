@@ -11,8 +11,16 @@ from .logic import get_cfg, map_to_ease
 LAST_CALL = {}
 
 
-def _post_verdict_in_webview(context, msg):
-    # показать на карточке (если подключён колбэк), и тултипом
+def _get_field(note, name: str) -> str:
+    """Безопасное получение значения поля заметки"""
+    try:
+        return (note[name] or "").strip()
+    except KeyError:
+        return ""
+
+
+def _post_verdict_in_webview(context, msg: str):
+    """Показываем совет в тултипе и (если есть) на карточке"""
     try:
         context.eval(
             f"if(window._ankiAddonCallback) _ankiAddonCallback({json.dumps(msg)});"
@@ -26,6 +34,7 @@ def on_js_message(handled, message, context):
     if not isinstance(message, str) or not message.startswith("judge:"):
         return handled
 
+    # достаём payload из JS
     try:
         payload = json.loads(message[len("judge:") :])
     except Exception:
@@ -38,19 +47,24 @@ def on_js_message(handled, message, context):
 
     cfg = get_cfg()
     note = card.note()
-    gold = (note.get(cfg["fields"]["etalon_field"], "") or "").strip()
+
+    gold = _get_field(note, cfg["fields"]["etalon_field"])
     user_text = (payload.get("text") or "").strip()
+
     if not user_text:
         return (True, None)
+    if not gold:
+        tooltip(f"Поле эталона '{cfg['fields']['etalon_field']}' пусто или отсутствует")
+        return (True, None)
 
-    # анти-дубль Enter
+    # анти-дубль: защита от двойного Enter
     key = f"{card.id}:{hashlib.sha1(user_text.encode('utf8')).hexdigest()}"
     now = time.time()
     if key in LAST_CALL and now - LAST_CALL[key] < 6:
         return (True, None)
     LAST_CALL[key] = now
 
-    # --- фоновая задача ---
+    # Фоновая задача: вызов GPT
     def work():
         return judge_text(
             user_text=user_text,
