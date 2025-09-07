@@ -1,25 +1,20 @@
 {
   "openai_api_key": "",
   "model": "gpt-4o-mini",
-  "lang": "en",
-  "strictness": "medium",
   "timeout_sec": 12,
   "auto_answer": false,
   "fields": {
-    "sentence_field": "Front",
     "etalon_field": "Back"
   },
   "cache_ttl_sec": 600,
   "max_input_len": 800,
   "max_gold_len": 800,
-  "deck_whitelist": [],
-  "deck_blacklist": [],
-  "note_type_whitelist": [],
-  "note_type_blacklist": [],
-  "base_url": "https://api.openai.com",
+  "base_url": "https://api.openai.com/v1/",
   "retries": 2,
   "backoff_ms": [
     300,
     800
-  ]
+  ],
+  "temperature": 0.3,
+  "max_tokens": 64
 }
