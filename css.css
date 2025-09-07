@@ -1,50 +1,87 @@
 :root {
-    --bg: #0f1115;
-    --card: #171b24;
-    --text: #e9edf5;
-    --muted: #a9b3c7;
-    --accent: #7aa2ff;
-    --good: #4ade80;
-    --warn: #f59e0b;
-    --bad: #ef4444;
-    --easy: #60a5fa;
-    --sep: #2c3244;
-    --radius: 16px;
-    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    --bg: #1b1f26;
+    /* фон окна: мягкий тёмно-серый */
+    --plate: #242933;
+    /* фон плитки (карточки) */
+    --text: #e5e9f0;
+    /* основной текст светлый */
+    --muted: #9aa3b5;
+    /* приглушённый текст */
+    --accent: #4f8bff;
+    /* акцент (синий) */
 
-    --log-width: 380px;
-    /* ширина панели лога */
-    --log-shift: 190px;
-    /* сдвиг при открытом логе */
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --easy: #60a5fa;
+    --sep: #2f3542;
+    /* разделители */
+    --radius: 16px;
+    --shadow: 0 6px 20px rgba(0, 0, 0, .35);
+
+    --gap: 12px;
+    --log-width: 360px;
+    --log-shift: calc(var(--log-width) - var(--gap));
 }
 
-/* === БАЗА === */
+/* ХОЛСТ */
 html,
 body {
+    height: 100%;
+    margin: 0;
     background: var(--bg);
     color: var(--text);
+    font-family: Inter, Segoe UI, system-ui, sans-serif;
 }
 
-.card {
-    max-width: 760px;
-    margin: 24px auto;
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 36px 28px;
+.viewport {
     position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+    padding: 64px 16px;
+    box-sizing: border-box
 }
 
-/* Сдвигаем ТОЛЬКО содержимое (карта + фон), лог остаётся фиксированным */
+/* карта */
 .shift-wrap {
-    transition: transform .25s ease;
-    will-change: transform;
+    width: clamp(320px, calc(100vw - 32px), 760px);
+    margin: 0 auto;
+    transition: none !important;
 }
 
 body.log-open .shift-wrap {
-    transform: translateX(calc(-1 * var(--log-shift)));
+    width: clamp(320px, calc(100vw - var(--log-width) - 64px), 720px);
+    margin-left: auto;
+    margin-right: var(--log-width);
+    transition: none !important;
 }
 
+.card {
+    position: relative;
+    padding: 36px 28px;
+    border-radius: var(--radius);
+    z-index: 0;
+}
+
+.card::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
+    background: var(--plate);
+    border-radius: calc(var(--radius) + 8px);
+    box-shadow: var(--shadow);
+    z-index: -1;
+}
+
+body.log-open .card {
+    padding-right: 14px;
+}
+
+body.log-open .card::before {
+    inset: -8px -4px -8px -8px;
+}
+
+/* контент */
 .ru {
     font-size: 40px;
     font-weight: 800;
@@ -76,7 +113,7 @@ body.log-open .shift-wrap {
 }
 
 .en.user {
-    color: #9cc2ff
+    color: var(--accent)
 }
 
 .muted {
@@ -93,18 +130,20 @@ body.log-open .shift-wrap {
 
 .typebox {
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     font-size: 20px;
     padding: 12px 14px;
     border-radius: 12px;
     border: 1px solid var(--sep);
-    background: #0e121a;
+    background: #1e222b;
     color: var(--text);
-    outline: none
+    outline: none;
 }
 
 .typebox:focus {
-    border-color: #2b6fff;
-    box-shadow: 0 0 0 4px rgba(122, 162, 255, .15)
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 139, 255, .25)
 }
 
 .gpt {
@@ -112,7 +151,7 @@ body.log-open .shift-wrap {
     border: 1px solid var(--sep);
     border-radius: 14px;
     padding: 12px 14px;
-    background: #0e121a
+    background: #1e222b
 }
 
 .hidden {
@@ -127,8 +166,8 @@ body.log-open .shift-wrap {
 
 .gpt-badge {
     background: var(--accent);
-    color: #081225;
-    font-weight: 800;
+    color: #fff;
+    font-weight: 700;
     border-radius: 999px;
     padding: 4px 10px;
     font-size: 12px
@@ -158,12 +197,12 @@ body.log-open .shift-wrap {
 
 .gpt-ease.warn {
     color: var(--warn);
-    border-color: rgba(245, 158, 11, .6)
+    border-color: rgba(251, 191, 36, .6)
 }
 
 .gpt-ease.danger {
     color: var(--bad);
-    border-color: rgba(239, 68, 68, .6)
+    border-color: rgba(248, 113, 113, .6)
 }
 
 .gpt-ease.easy {
@@ -171,14 +210,11 @@ body.log-open .shift-wrap {
     border-color: rgba(96, 165, 250, .6)
 }
 
-.gpt-comment {
-    opacity: .9
-}
-
 .gpt-confidence {
     margin-top: 6px
 }
 
+/* подсветка */
 #ease1,
 #ease2,
 #ease3,
@@ -187,37 +223,21 @@ body.log-open .shift-wrap {
 }
 
 .ease-suggest {
-    box-shadow: 0 0 0 3px rgba(122, 162, 255, .35), 0 0 18px rgba(122, 162, 255, .35) !important;
+    box-shadow: 0 0 0 3px rgba(79, 139, 255, .3), 0 0 14px rgba(79, 139, 255, .25) !important;
     transform: translateY(-1px)
 }
 
-@media (max-width:600px) {
-    .ru {
-        font-size: 30px
-    }
-
-    .en {
-        font-size: 22px
-    }
-
-    .card {
-        padding: 24px 16px
-    }
-}
-
-/* === ЛОГ (без overlay) === */
-
-/* Кнопка "Лог" */
+/* лог */
 .log-toggle {
     position: absolute;
     top: 10px;
     right: 10px;
-    z-index: 10000;
+    z-index: 8000;
     font-size: 12px;
     padding: 6px 10px;
     border-radius: 10px;
     border: 1px solid var(--sep);
-    background: #0e121a;
+    background: #1e222b;
     color: var(--text);
     cursor: pointer;
     opacity: .9;
@@ -227,16 +247,15 @@ body.log-open .shift-wrap {
     opacity: 1
 }
 
-/* Панель лога — сайдбар справа, fixed к окну */
 .log-panel {
     position: fixed;
     top: 0;
     right: 0;
     bottom: 0;
     width: var(--log-width);
-    background: #0b0f16;
+    background: #20252e;
     border-left: 1px solid var(--sep);
-    box-shadow: -8px 0 30px rgba(0, 0, 0, .6);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -249,21 +268,20 @@ body.log-open .shift-wrap {
 
 body.log-open .log-panel {
     transform: translateX(0);
-    opacity: 1;
+    opacity: 1
 }
 
-/* Внутренности лога */
 .log-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 8px
 }
 
 .log-head-title {
     font-weight: 700;
     font-size: 14px;
-    letter-spacing: .02em;
+    letter-spacing: .02em
 }
 
 .log-clear {
@@ -272,7 +290,7 @@ body.log-open .log-panel {
     padding: 2px 8px;
     border-radius: 8px;
     border: 1px solid var(--sep);
-    background: #101521;
+    background: #1e222b;
     color: var(--muted);
     cursor: pointer;
 }
@@ -283,18 +301,19 @@ body.log-open .log-panel {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 12px;
     line-height: 1.45;
-    background: #0e121a;
+    background: #1a1e26;
     border: 1px solid var(--sep);
     border-radius: 10px;
     padding: 8px;
     white-space: pre-wrap;
     word-break: break-word;
+    scrollbar-gutter: stable both-edges;
 }
 
 .log-entry {
     margin-bottom: 8px;
     border-bottom: 1px dashed var(--sep);
-    padding-bottom: 6px;
+    padding-bottom: 6px
 }
 
 .log-footer {
@@ -303,23 +322,44 @@ body.log-open .log-panel {
     font-size: 12px;
     color: var(--muted);
     display: grid;
-    gap: 4px;
+    gap: 4px
 }
 
 .log-kv {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
+    gap: 10px
 }
 
 .log-kv b {
-    color: var(--text);
+    color: var(--text)
 }
 
-/* На узких экранах лог на всю ширину, карта остаётся на месте */
-@media (max-width: 760px) {
+/* адаптив */
+@media (max-width:760px) {
     :root {
         --log-width: 100vw;
-        --log-shift: 0px;
+        --gap: 12px
+    }
+
+    body.log-open .shift-wrap {
+        width: clamp(320px, calc(100vw - 32px), 760px);
+        margin: 0 auto
+    }
+
+    .ru {
+        font-size: 30px
+    }
+
+    .en {
+        font-size: 22px
+    }
+
+    .card {
+        padding: 24px 16px
+    }
+
+    .card::before {
+        inset: -8px
     }
 }
