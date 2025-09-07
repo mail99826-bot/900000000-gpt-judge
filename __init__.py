@@ -179,14 +179,7 @@ def on_js_message(handled, message, context):
         return judge_text(
             user_text=user_text[: cfg.get("max_input_len", 800)],
             gold_text=gold[: cfg.get("max_gold_len", 800)],
-            model=model,
-            temperature=cfg.get("temperature", 0.3),
-            max_tokens=cfg.get("max_tokens", 64),
-            timeout=cfg.get("timeout_sec", 12),
             api_key=api_key,
-            base_url=cfg.get("base_url", "https://api.openai.com/v1/"),
-            retries=cfg.get("retries", 2),
-            backoff_ms=cfg.get("backoff_ms", [300, 800]),
         )
 
     def on_done(fut):
