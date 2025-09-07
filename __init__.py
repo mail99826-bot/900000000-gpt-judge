@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import re
 import secrets
 import time
@@ -24,7 +23,7 @@ _ws_re = re.compile(r"\s+")
 _p_space = re.compile(r"\s+([,.:;!?])")
 
 
-def _norm(s):
+def _norm(s: str) -> str:
     s = (s or "").strip().lower()
     s = unicodedata.normalize("NFKC", s)
     s = _ws_re.sub(" ", s)
@@ -32,24 +31,26 @@ def _norm(s):
     return s
 
 
-def _get_field(note, name):
+def _get_field(note, name: str) -> str:
     try:
         return (note[name] or "").strip()
     except Exception:
         return ""
 
 
-def _cache_key(user, gold):
+def _cache_key(user: str, gold: str, model: str = "") -> str:
     # соль, чтобы по ключу нельзя было догадаться о содержимом
     h = hashlib.sha256()
     h.update(_SALT)
-    h.update(user.encode("utf-8", errors="ignore"))
+    h.update(model.encode("utf-8", "ignore"))
     h.update(b"\0")
-    h.update(gold.encode("utf-8", errors="ignore"))
+    h.update(user.encode("utf-8", "ignore"))
+    h.update(b"\0")
+    h.update(gold.encode("utf-8", "ignore"))
     return h.hexdigest()
 
 
-def _cache_get(k, now, ttl):
+def _cache_get(k: str, now: float, ttl: int):
     v = CACHE.get(k)
     if not v:
         return None
@@ -65,12 +66,44 @@ def _cache_get(k, now, ttl):
     return payload
 
 
-def _cache_put(k, payload, now):
+def _cache_put(k: str, payload, now: float) -> None:
     CACHE[k] = (now, payload)
     CACHE.move_to_end(k)
     while len(CACHE) > CACHE_MAX:
         # удаляем самый старый
         CACHE.popitem(last=False)
+
+
+def _tooltip_from_verdict(verdict: dict) -> str:
+    """
+    Форматирует тултип:
+      "<Category> — <Comment> → <Button>"
+      или "<Comment> → <Button>"
+      или просто "→ <Button>", если пустые.
+    """
+    category = (verdict.get("category") or "").strip()
+    button = (verdict.get("button") or "").strip()
+    comment = (verdict.get("comment") or "").strip()
+
+    right = f"→ {button}" if button else ""
+    if category and comment:
+        return f"{category} — {comment} {right}".strip()
+    if comment:
+        return f"{comment} {right}".strip()
+    if button:
+        return right.strip()
+    return "✓"
+
+
+def _ease_from_verdict(verdict: dict) -> int:
+    # сначала пробуем числовой ease из модели
+    e = map_to_ease(verdict.get("ease"))
+    if e in (1, 2, 3, 4):
+        return e
+    # затем маппим из button
+    btn = (verdict.get("button") or "").strip().lower()
+    m = {"again": 1, "hard": 2, "good": 3, "easy": 4}
+    return m.get(btn, 0)
 
 
 def on_js_message(handled, message, context):
@@ -106,6 +139,7 @@ def on_js_message(handled, message, context):
 
     # быстрый путь: точное совпадение после нормализации
     if user_norm == gold_norm and gold_norm:
+        # Совместимость со старой логикой: сразу Easy
         ease = 4
         tooltip("Exact match → Easy")
         if cfg.get("auto_answer", True):
@@ -124,20 +158,14 @@ def on_js_message(handled, message, context):
 
     # кэш по содержимому
     cache_ttl = int(cfg.get("cache_ttl_sec", 600))
-    ckey = _cache_key(user_norm, gold_norm)
+    model = cfg.get("model", "gpt-4o-mini")
+    ckey = _cache_key(user_norm, gold_norm, model)
     if cache_ttl > 0:
         cached = _cache_get(ckey, now, cache_ttl)
         if cached:
-            ease = map_to_ease(cached.get("ease"))
-            comment = (cached.get("comment") or "").strip()
-            label = (
-                ["Again", "Hard", "Good", "Easy"][ease - 1]
-                if ease in (1, 2, 3, 4)
-                else "—"
-            )
-            tooltip(
-                f"GPT(кеш): {comment} → {label}" if comment else f"GPT(кеш) → {label}"
-            )
+            ease = _ease_from_verdict(cached)
+            tip = _tooltip_from_verdict(cached)
+            tooltip(f"GPT(кеш): {tip}")
             if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
                 try:
                     mw.reviewer._answerCard(ease)
@@ -151,7 +179,7 @@ def on_js_message(handled, message, context):
         return judge_text(
             user_text=user_text[: cfg.get("max_input_len", 800)],
             gold_text=gold[: cfg.get("max_gold_len", 800)],
-            model=cfg.get("model", "gpt-4o-mini"),
+            model=model,
             temperature=cfg.get("temperature", 0.3),
             max_tokens=cfg.get("max_tokens", 64),
             timeout=cfg.get("timeout_sec", 12),
@@ -167,7 +195,7 @@ def on_js_message(handled, message, context):
         if not cur or cur.id != requested_card_id:
             return
         try:
-            verdict = fut.result()
+            verdict = fut.result()  # dict: {category, button, comment, ease}
         except Exception as e:
             tooltip(f"GPT error: {e}")
             return
@@ -175,12 +203,9 @@ def on_js_message(handled, message, context):
         if cache_ttl > 0:
             _cache_put(ckey, verdict, time.time())
 
-        ease = map_to_ease(verdict.get("ease"))
-        comment = (verdict.get("comment") or "").strip()
-        label = (
-            ["Again", "Hard", "Good", "Easy"][ease - 1] if ease in (1, 2, 3, 4) else "—"
-        )
-        tooltip(f"GPT: {comment} → {label}" if comment else f"GPT → {label}")
+        ease = _ease_from_verdict(verdict)
+        tip = _tooltip_from_verdict(verdict)
+        tooltip(f"GPT: {tip}")
 
         if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
             try:
