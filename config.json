@@ -1,0 +1,24 @@
+{
+  "openai_api_key": "sk-aitunnel-pfSOfqif5mefV5o0nw1fV5ddz0CBrxLk",
+  "model": "gpt-4o-mini",
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "max_tokens": 128,
+  "timeout_sec": 12,
+  "auto_answer": false,
+  "fields": {
+    "etalon_field": "Back"
+  },
+  "cache_ttl_sec": 600,
+  "max_input_len": 800,
+  "max_gold_len": 800,
+  "base_url": "https://api.aitunnel.ru/v1/",
+  "retries": 0,
+  "backoff_ms": [
+    500,
+    1000
+  ],
+  "pad_min_tokens": 1024,
+  "pad_piece": " [PAD]",
+  "pad_margin_tokens": 64
+}
