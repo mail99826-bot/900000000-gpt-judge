@@ -1,0 +1,12 @@
+{{Front}}
+<hr>
+<b>Эталонный перевод:</b><br>
+<div style="font-size:18px;color:darkgreen">{{Back}}</div>
+<hr>
+<b>Ваш ответ:</b><br>
+<div id="userAns" style="font-size:18px;color:blue"></div>
+<script>
+    if (window._lastUserInput) {
+        document.getElementById('userAns').textContent = window._lastUserInput;
+    }
+</script>

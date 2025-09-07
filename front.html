@@ -1,0 +1,20 @@
+{ { Front } }
+<hr>
+    <input id="ans" type="text" placeholder="Введите перевод на английский и Enter" autofocus style="width:100%;font-size:18px;padding:6px;">
+        <div id="status" style="margin-top:8px;font-size:14px;color:gray;"></div>
+        <script>
+            (function(){
+  const el = document.getElementById('ans');
+            const status = document.getElementById('status');
+            window._ankiAddonCallback = function(msg){status.textContent = msg; };
+            el.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter') {
+      const txt = (el.value||'').trim();
+            if (!txt) return;
+            status.textContent = 'Оцениваю ответ...';
+            window._lastUserInput = txt;
+            pycmd('judge:' + JSON.stringify({text: txt, t: Date.now()}));
+    }
+  });
+})();
+        </script>

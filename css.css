@@ -1,0 +1,154 @@
+:root {
+    --bg: #0f1115;
+    --card: #1b1f2b;
+    --text: #e9edf5;
+    --muted: #a9b3c7;
+    --accent: #7aa2ff;
+    --bad: #ff5c77;
+    --good: #4ade80;
+    --missed: #facc15;
+    --sep: #2c3244;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .4);
+    --radius: 16px;
+}
+
+/* База карточки */
+.card {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Roboto, sans-serif;
+    font-size: 22px;
+    padding: 36px 22px;
+}
+
+/* Контейнер */
+.trainer {
+    max-width: 900px;
+    margin: 6vh auto;
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 48px 32px;
+    text-align: center;
+}
+
+/* Русский текст */
+.ru {
+    font-size: 42px;
+    font-weight: 800;
+    margin-bottom: 36px;
+    /* ровный зазор до поля */
+}
+
+/* Поле */
+.input-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 36px;
+    /* симметрия сверху и снизу */
+    width: 100%;
+}
+
+#typeans,
+.typebox,
+#typeans span,
+.typeGood,
+.typeBad,
+.typeMissed {
+    font-size: 44px !important;
+    line-height: 1.5;
+    font-family: "Fira Code", Consolas, Menlo, monospace !important;
+}
+
+#typeans,
+.typebox {
+    padding: 28px 32px;
+    border-radius: 18px;
+    border: 2px solid var(--sep);
+    background: #10131b;
+    color: var(--text);
+    box-sizing: border-box;
+    transition: box-shadow .15s ease, border-color .15s ease;
+    text-align: center;
+    /* текст тоже по центру */
+}
+
+#typeans:focus,
+.typebox:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 5px rgba(122, 162, 255, .35);
+    outline: none;
+}
+
+/* Убираем подсказку */
+.hint {
+    display: none !important;
+}
+
+/* Разделитель */
+.sep {
+    border: none;
+    border-top: 1px solid var(--sep);
+    margin: 36px auto;
+    width: 80%;
+    /* чуть уже для симметрии */
+}
+
+/* Заголовок блока ответа */
+.label {
+    color: var(--muted);
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    margin-bottom: 16px;
+}
+
+/* Ответ */
+.en {
+    font-size: 42px;
+    font-weight: 800;
+}
+
+/* Подсветка Anki */
+.typeGood {
+    background: rgba(74, 222, 128, 0.15);
+    color: var(--good);
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+.typeBad {
+    background: rgba(255, 92, 119, 0.15);
+    color: var(--bad);
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+.typeMissed {
+    background: rgba(250, 204, 21, 0.15);
+    color: var(--missed);
+    border-radius: 6px;
+    padding: 4px 6px;
+}
+
+/* Адаптив */
+@media (max-width: 640px) {
+    .trainer {
+        padding: 32px 16px;
+    }
+
+    .ru {
+        font-size: 32px;
+        margin-bottom: 24px;
+    }
+
+    #typeans,
+    .typebox {
+        font-size: 28px;
+        width: 100% !important;
+    }
+
+    .en {
+        font-size: 34px;
+    }
+}
