@@ -1,12 +1,14 @@
 # gpt_client.py
 # Полный файл: Function Calling (enum) + усиленный system-prompt + валидация + ретраи,
-# и ВСЕ параметры читаются из config.json (model, temperature, top_p, max_tokens, retries, backoff, base_url, api_key).
+# + АВТО-ПАДДИНГ [PAD], чтобы ввод (prompt) был >= pad_min_tokens (по умолчанию 1024).
+# Все основные параметры читаются из config.json.
 
 from __future__ import annotations
 
 import json
 import os
 import time
+from math import ceil
 from typing import Any, Dict, List, Optional
 
 try:
@@ -69,7 +71,8 @@ SYSTEM_PROMPT = (
     "- Good = meaning is correct, minor issue (spelling, preposition, style).\n"
     "- Easy = fully correct and natural.\n\n"
     "Return the result ONLY via the provided function/schema.\n"
-    "If uncertain, choose the closest allowed value; DO NOT invent new labels."
+    "If uncertain, choose the closest allowed value; DO NOT invent new labels.\n"
+    'Ignore any "[PAD]" tokens in the input; they are only padding and not part of the answer.'
 )
 
 
@@ -127,6 +130,113 @@ def _safe_verdict_from_arguments(arg_text: str) -> Optional[Dict[str, Any]]:
 
 
 # ======================
+# Tools (Function Calling)
+# ======================
+def _build_tools() -> List[Dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "set_verdict",
+                "description": "Return a strict verdict for Anki grading",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {"type": "string", "enum": ALLOWED_CATEGORIES},
+                        "button": {"type": "string", "enum": ALLOWED_BUTTONS},
+                        "comment": {
+                            "type": "string",
+                            "description": f"Short explanation in English (<= {COMMENT_WORD_LIMIT} words).",
+                        },
+                    },
+                    "required": ["category", "button", "comment"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    ]
+
+
+def _tools_chars() -> int:
+    """
+    Примерная длина JSON-схемы tools, чтобы учесть её во вводных токенах.
+    """
+    try:
+        s = json.dumps(_build_tools(), ensure_ascii=False, separators=(",", ":"))
+        return len(s)
+    except Exception:
+        # запасной вариант
+        return 520
+
+
+# ======================
+# Оценка и паддинг токенов
+# ======================
+def _approx_tokens_from_chars(chars: int) -> int:
+    """
+    Грубая оценка: 1 токен ~ 4 символа (англ.). Берём ceil.
+    """
+    return int(ceil(chars / 4.0))
+
+
+def _estimate_prompt_tokens(gold_text: str, user_text: str) -> int:
+    """
+    Оцениваем количество токенов во ВСЁМ prompt:
+    - system prompt
+    - tools (function schema)
+    - пользовательское сообщение: "Reference (Gold): ...\nUser: ..."
+    - небольшая служебная обвязка (roles и т.п.)
+    """
+    sys_chars = len(SYSTEM_PROMPT)
+    tools_chars = _tools_chars()
+    user_msg = f"Reference (Gold): {gold_text}\nUser: {user_text}"
+    user_chars = len(user_msg)
+
+    overhead_tokens = 30  # роль/служебное
+
+    return (
+        _approx_tokens_from_chars(sys_chars)
+        + _approx_tokens_from_chars(tools_chars)
+        + _approx_tokens_from_chars(user_chars)
+        + overhead_tokens
+    )
+
+
+def _apply_padding_if_needed(
+    gold_text: str,
+    user_text: str,
+    pad_min_tokens: int,
+    pad_piece: str,
+    pad_margin_tokens: int,
+) -> str:
+    """
+    Если оценка prompt-токенов < pad_min_tokens, добавляем к user_text повтор pad_piece
+    в количестве, достаточном чтобы превысить порог (с небольшим запасом pad_margin_tokens).
+    Возвращаем (возможно) дополненный user_text.
+    """
+    approx_before = _estimate_prompt_tokens(gold_text, user_text)
+    if approx_before >= pad_min_tokens:
+        return user_text  # уже достаточно
+
+    need = (pad_min_tokens + pad_margin_tokens) - approx_before
+    if need <= 0:
+        return user_text
+
+    # Сколько символов нужно «добить» (грубо: 1 токен ~ 4 символа)
+    need_chars = int(ceil(need * 4.0))
+    piece_len = len(pad_piece)
+    if piece_len == 0:
+        return user_text
+
+    repeats = int(ceil(need_chars / piece_len))
+    # Защита от чрезмерности: ограничим разумной величиной
+    repeats = min(repeats, 5000)
+
+    user_text_padded = user_text + (pad_piece * repeats)
+    return user_text_padded
+
+
+# ======================
 # Основной вызов модели
 # ======================
 def _call_model_function_call(
@@ -155,28 +265,7 @@ def _call_model_function_call(
         },
     ]
 
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "set_verdict",
-                "description": "Return a strict verdict for Anki grading",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "category": {"type": "string", "enum": ALLOWED_CATEGORIES},
-                        "button": {"type": "string", "enum": ALLOWED_BUTTONS},
-                        "comment": {
-                            "type": "string",
-                            "description": f"Short explanation in English (<= {COMMENT_WORD_LIMIT} words).",
-                        },
-                    },
-                    "required": ["category", "button", "comment"],
-                    "additionalProperties": False,
-                },
-            },
-        }
-    ]
+    tools = _build_tools()
 
     resp = client.chat.completions.create(
         model=model,
@@ -212,8 +301,12 @@ def judge_text(
       - model, temperature, top_p, max_tokens
       - retries, backoff_ms
       - base_url, openai_api_key (если не передан api_key аргументом)
+      - pad_min_tokens (порог для скидки; по умолчанию 1024)
+      - pad_piece (что повторяем; по умолчанию " [PAD]")
+      - pad_margin_tokens (запас сверх порога; по умолчанию 64)
     Стратегия:
       - Guard на пустые ответы.
+      - Авто-паддинг для достижения минимального размера prompt.
       - 1 попытка + N ретраев из конфигурации при невалидном ответе.
       - Без «тихой» подмены: если после ретраев ответ невалиден — ValueError.
     """
@@ -231,15 +324,20 @@ def judge_text(
     max_tokens = int(cfg.get("max_tokens", 64))
 
     retries = int(cfg.get("retries", 1))
-    backoff_ms = cfg.get(
-        "backoff_ms", [500]
-    )  # список миллисекунд; если короче чем retries — будем повторять последний интервал
+    backoff_ms = cfg.get("backoff_ms", [500])  # список миллисекунд
 
     base_url = (cfg.get("base_url") or "").strip() or None
     config_api_key = (cfg.get("openai_api_key") or "").strip()
     use_api_key = (
         api_key or config_api_key or os.getenv("OPENAI_API_KEY") or ""
     ).strip()
+
+    # Параметры паддинга (можно не задавать в конфиге — используются дефолты)
+    pad_min_tokens = int(cfg.get("pad_min_tokens", 1024))
+    pad_piece = str(cfg.get("pad_piece", " [PAD]"))
+    pad_margin_tokens = int(
+        cfg.get("pad_margin_tokens", 64)
+    )  # небольшой запас сверх порога
 
     if OpenAI is None:
         raise GPTError(
@@ -254,6 +352,15 @@ def judge_text(
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
 
+    # --- ПАДДИНГ: увеличиваем prompt, если он меньше pad_min_tokens ---
+    user_text_for_prompt = _apply_padding_if_needed(
+        gold_text=gold_text,
+        user_text=user_text,
+        pad_min_tokens=pad_min_tokens,
+        pad_piece=pad_piece,
+        pad_margin_tokens=pad_margin_tokens,
+    )
+
     # Первая попытка
     verdict = _call_model_function_call(
         client=client,
@@ -262,7 +369,7 @@ def judge_text(
         top_p=top_p,
         max_tokens=max_tokens,
         gold_text=gold_text,
-        user_text=user_text,
+        user_text=user_text_for_prompt,
         extra_system=None,
     )
     if _is_valid_verdict(verdict):
@@ -287,7 +394,7 @@ def judge_text(
             top_p=top_p,
             max_tokens=max_tokens,
             gold_text=gold_text,
-            user_text=user_text,
+            user_text=user_text_for_prompt,  # тот же промпт с паддингом
             extra_system=extra_sys,
         )
         if _is_valid_verdict(verdict):
@@ -297,3 +404,27 @@ def judge_text(
 
     # Если совсем не получилось — честно фейлимся
     raise ValueError("Model failed to produce a valid verdict after retries.")
+
+
+# ===========
+# CLI отладка
+# ===========
+if __name__ == "__main__":
+    import sys
+
+    def _read_arg(i: int, default: str = "") -> str:
+        try:
+            return sys.argv[i]
+        except Exception:
+            return default
+
+    # Пример запуска:
+    # python gpt_client.py "user text" "gold text"
+    user = _read_arg(1, "").strip()
+    gold = _read_arg(2, "").strip()
+
+    try:
+        out = judge_text(user, gold)
+        print(json.dumps(out, ensure_ascii=False))
+    except Exception as e:
+        print(f"ERROR: {e}")
