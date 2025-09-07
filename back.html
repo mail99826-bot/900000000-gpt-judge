@@ -1,17 +1,16 @@
-{{Front}}
 <div class="card">
+    <!-- Кнопка открытия/закрытия лога -->
+    <button id="logToggle" class="log-toggle" title="Показать/скрыть лог">Лог</button>
+
+    <!-- Контент карточки -->
     <div class="ru">{{Front}}</div>
 
-    <div class="section">
-        <div class="label">Эталонный перевод</div>
-        <div class="en gold">{{Back}}</div>
+    <div class="input-wrap">
+        <input id="typeans" class="typebox" type="text" placeholder="Введите перевод и нажмите Enter" autofocus>
+        <div id="status" class="muted"></div>
     </div>
 
-    <div class="section">
-        <div class="label">Ваш ответ</div>
-        <div id="userAns" class="en user"></div>
-    </div>
-
+    <!-- Панель с советом GPT -->
     <div id="gptPanel" class="gpt hidden" aria-live="polite">
         <div class="gpt-row">
             <div class="gpt-badge">GPT</div>
@@ -25,47 +24,182 @@
         </div>
         <div id="gptConfidence" class="gpt-confidence muted"></div>
     </div>
+
+    <!-- Эталон (показываем только после ввода) -->
+    <div id="goldSection" class="section" style="display:none">
+        <div class="label">Эталонный перевод</div>
+        <div class="en gold">{{Back}}</div>
+    </div>
+
+    <div class="section">
+        <div class="label">Ваш ответ</div>
+        <div id="userAns" class="en user"></div>
+    </div>
+</div>
+
+<!-- Панель лога (выдвижной сайдбар справа) -->
+<div id="logPanel" class="log-panel" aria-label="Журнал GPT">
+    <div class="log-head">
+        <div class="log-head-title">Журнал GPT</div>
+        <button id="logClear" class="log-clear" title="Очистить">Очистить</button>
+    </div>
+    <div id="logBody" class="log-body" aria-live="polite"></div>
+    <div class="log-footer">
+        <div class="log-kv"><span>Отправлено токенов</span><b id="tokOut">0</b></div>
+        <div class="log-kv"><span>Получено токенов</span><b id="tokIn">0</b></div>
+        <div class="log-kv"><span>Всего токенов</span><b id="tokTotal">0</b></div>
+        <div class="log-kv"><span>Оценка стоимости</span><b id="costUSD">—</b></div>
+        <div class="log-kv"><span>Баланс</span><b id="balanceUSD">—</b></div>
+    </div>
 </div>
 
 <script>
     (function () {
-        const $ = (s) => document.querySelector(s);
-        const userAns = $('#userAns');
-        if (window._lastUserInput) { userAns.textContent = window._lastUserInput; }
+        function $(s) { return document.querySelector(s); }
+        var el = $('#typeans');
+        var status = $('#status');
+        var userAns = $('#userAns');
+        var gptPanel = $('#gptPanel');
+        var gptEase = $('#gptEase');
+        var gptComment = $('#gptComment');
+        var gptConf = $('#gptConfidence');
+        var gold = document.getElementById('goldSection');
 
-        const gptPanel = $('#gptPanel');
-        const gptEase = $('#gptEase');
-        const gptComment = $('#gptComment');
-        const gptConf = $('#gptConfidence');
+        // --- ЛОГ (только кнопка) ---
+        var logPanel = $('#logPanel');
+        var logToggle = $('#logToggle');
+        var logClear = $('#logClear');
+        var logBody = $('#logBody');
+        var elTokOut = $('#tokOut');
+        var elTokIn = $('#tokIn');
+        var elTokTotal = $('#tokTotal');
+        var elCost = $('#costUSD');
+        var elBalance = $('#balanceUSD');
+        var aggOut = 0, aggIn = 0, aggTotal = 0;
 
+        function has(v) { return typeof v !== 'undefined' && v !== null; }
+        function focusInput() { if (el) setTimeout(function () { try { el.focus(); } catch (e) { } }, 50); }
+
+        function openLog() { document.body.classList.add('log-open'); focusInput(); }
+        function closeLog() { document.body.classList.remove('log-open'); focusInput(); }
+        function toggleLog() { if (document.body.classList.contains('log-open')) closeLog(); else openLog(); }
+
+        if (logToggle) logToggle.addEventListener('click', toggleLog);
+        if (logClear) logClear.addEventListener('click', function () {
+            if (logBody) logBody.innerHTML = '';
+            aggOut = aggIn = aggTotal = 0;
+            if (elTokOut) elTokOut.textContent = '0';
+            if (elTokIn) elTokIn.textContent = '0';
+            if (elTokTotal) elTokTotal.textContent = '0';
+            if (elCost) elCost.textContent = '—';
+            if (elBalance) elBalance.textContent = '—';
+            focusInput();
+        });
+
+        function logAppend(obj) {
+            try {
+                var ts = new Date().toLocaleTimeString();
+                var e = document.createElement('div');
+                e.className = 'log-entry';
+                var text = (typeof obj === 'string') ? obj : JSON.stringify(obj, null, 2);
+                e.textContent = '[' + ts + '] ' + text;
+                if (logBody) { logBody.appendChild(e); logBody.scrollTop = logBody.scrollHeight; }
+
+                var o = 0; if (obj && has(obj.prompt_tokens)) o = Number(obj.prompt_tokens); else if (obj && has(obj.in_tokens)) o = Number(obj.in_tokens);
+                var i = 0; if (obj && has(obj.completion_tokens)) i = Number(obj.completion_tokens); else if (obj && has(obj.out_tokens)) i = Number(obj.out_tokens);
+                var t = 0; if (obj && has(obj.total_tokens)) t = Number(obj.total_tokens); else t = o + i;
+
+                if (!isNaN(o)) aggOut += o;
+                if (!isNaN(i)) aggIn += i;
+                if (!isNaN(t)) aggTotal += t;
+
+                if (elTokOut) elTokOut.textContent = String(aggOut);
+                if (elTokIn) elTokIn.textContent = String(aggIn);
+                if (elTokTotal) elTokTotal.textContent = String(aggTotal);
+
+                if (obj && typeof obj.cost_usd === 'number' && elCost) elCost.textContent = '$' + obj.cost_usd.toFixed(4);
+                if (obj && typeof obj.balance_usd === 'number' && elBalance) elBalance.textContent = '$' + obj.balance_usd.toFixed(2);
+            } catch (_) { }
+        }
+        window._ankiLogAppend = function (ev) {
+            try { logAppend((typeof ev === 'string') ? JSON.parse(ev) : ev); } catch (e) { logAppend(ev); }
+        };
+
+        // --- подсветка ease ---
         function highlightEase(ease) {
             try {
-                for (let i = 1; i <= 4; i++) {
-                    const btn = document.getElementById('ease' + i);
+                for (var iBtn = 1; iBtn <= 4; iBtn++) {
+                    var btn = document.getElementById('ease' + iBtn);
                     if (btn) { btn.classList.remove('ease-suggest'); }
                 }
-                const target = document.getElementById('ease' + ease);
+                var target = document.getElementById('ease' + ease);
                 if (target) { target.classList.add('ease-suggest'); }
             } catch (_) { }
         }
 
-        function showGptAdvice({ ease, comment, confidence }) {
-            const easeMap = { 1: 'Again (1)', 2: 'Hard (2)', 3: 'Good (3)', 4: 'Easy (4)' };
-            gptEase.textContent = ease ? `Нажмите: ${easeMap[ease] || ease}` : '';
-            gptEase.classList.toggle('danger', ease === 1);
-            gptEase.classList.toggle('warn', ease === 2);
-            gptEase.classList.toggle('ok', ease === 3);
-            gptEase.classList.toggle('easy', ease === 4);
+        // --- панель GPT ---
+        function showGptAdvice(obj) {
+            obj = obj || {};
+            var ease = obj.ease;
+            var comment = obj.comment;
+            var confidence = obj.confidence;
+            var easeMap = { 1: 'Again (1)', 2: 'Hard (2)', 3: 'Good (3)', 4: 'Easy (4)' };
 
-            gptComment.textContent = comment ? ` — ${comment}` : '';
-            gptConf.textContent = (typeof confidence === 'number') ? `Уверенность: ${(confidence * 100).toFixed(0)}%` : '';
+            if (gptEase) {
+                gptEase.textContent = ease ? ('Нажмите: ' + (easeMap[ease] || ease)) : '';
+                gptEase.classList.remove('danger', 'warn', 'ok', 'easy');
+                if (ease === 1) gptEase.classList.add('danger');
+                else if (ease === 2) gptEase.classList.add('warn');
+                else if (ease === 3) gptEase.classList.add('ok');
+                else if (ease === 4) gptEase.classList.add('easy');
+            }
+            if (gptComment) gptComment.textContent = comment ? (' — ' + comment) : '';
+            if (gptConf) gptConf.textContent = (typeof confidence === 'number') ? ('Уверенность: ' + Math.round(confidence * 100) + '%') : '';
 
-            gptPanel.classList.remove('hidden');
+            if (gptPanel) gptPanel.classList.remove('hidden');
             if (ease) highlightEase(ease);
         }
 
-        window._ankiAddonCallbackBack = function (msg) {
-            try { showGptAdvice(typeof msg === 'string' ? JSON.parse(msg) : msg); } catch (_) { }
+        // колбэк от аддона с советом
+        window._ankiAddonCallback = function (msg) {
+            try {
+                var data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+                if (data && (typeof data.ease !== 'undefined' || typeof data.comment !== 'undefined')) {
+                    showGptAdvice(data);
+                    if (status) status.textContent = '';
+                    return;
+                }
+            } catch (_) { }
+            if (status) status.textContent = (msg == null ? '' : String(msg));
         };
+        window._ankiAddonCallbackBack = window._ankiAddonCallback;
+
+        // отправка на оценку
+        if (el) {
+            el.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Enter') {
+                    var txt = (el.value || '').trim();
+                    if (!txt) return;
+                    if (status) status.textContent = 'Оцениваю ответ...';
+                    window._lastUserInput = txt;
+                    if (userAns) userAns.textContent = txt;
+                    if (gold) gold.style.display = '';
+                    if (typeof window._ankiLogAppend === 'function') {
+                        window._ankiLogAppend({ kind: 'request', text_len: txt.length });
+                    }
+                    try { pycmd('judge:' + JSON.stringify({ text: txt, t: Date.now() })); } catch (e) { }
+                    focusInput();
+                }
+            });
+        }
+
+        // восстановление состояния
+        if (window._lastUserInput) {
+            if (userAns) userAns.textContent = window._lastUserInput;
+            if (gold) gold.style.display = '';
+        }
+
+        // автофокус при загрузке
+        setTimeout(function () { try { if (el && document.activeElement !== el) el.focus(); } catch (e) { } }, 0);
     })();
 </script>

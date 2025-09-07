@@ -11,8 +11,14 @@
     --sep: #2c3244;
     --radius: 16px;
     --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+
+    --log-width: 380px;
+    /* ширина панели лога */
+    --log-shift: 190px;
+    /* сдвиг карты влево при открытом логе */
 }
 
+/* === БАЗА === */
 html,
 body {
     background: var(--bg);
@@ -26,7 +32,18 @@ body {
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     padding: 36px 28px;
+    position: relative;
+    transition: transform .25s ease;
 }
+
+.content {
+    transition: transform .25s ease;
+}
+
+body.log-open .content {
+    transform: translateX(calc(-1 * var(--log-shift)));
+}
+
 
 .ru {
     font-size: 40px;
@@ -185,5 +202,124 @@ body {
 
     .card {
         padding: 24px 16px
+    }
+}
+
+/* === ЛОГ (без overlay) === */
+
+/* Кнопка "Лог" */
+.log-toggle {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10000;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--sep);
+    background: #0e121a;
+    color: var(--text);
+    cursor: pointer;
+    opacity: .9;
+}
+
+.log-toggle:hover {
+    opacity: 1
+}
+
+/* Панель лога — сайдбар справа */
+.log-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--log-width);
+    background: #0b0f16;
+    border-left: 1px solid var(--sep);
+    box-shadow: -8px 0 30px rgba(0, 0, 0, .6);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 9999;
+    transform: translateX(100%);
+    opacity: 0;
+    transition: transform .25s ease, opacity .25s ease;
+}
+
+body.log-open .log-panel {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+/* Внутренности лога */
+.log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.log-head-title {
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: .02em;
+}
+
+.log-clear {
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--sep);
+    background: #101521;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.log-body {
+    flex: 1;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    background: #0e121a;
+    border: 1px solid var(--sep);
+    border-radius: 10px;
+    padding: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.log-entry {
+    margin-bottom: 8px;
+    border-bottom: 1px dashed var(--sep);
+    padding-bottom: 6px;
+}
+
+.log-footer {
+    border-top: 1px solid var(--sep);
+    padding-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    display: grid;
+    gap: 4px;
+}
+
+.log-kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.log-kv b {
+    color: var(--text);
+}
+
+/* На узких экранах лог на всю ширину, карта остаётся на месте */
+@media (max-width: 760px) {
+    :root {
+        --log-width: 100vw;
+        --log-shift: 0px;
     }
 }

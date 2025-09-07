@@ -1,85 +1,13 @@
-{{Front}}
-<div class="card">
-  <div class="ru">{{Front}}</div>
-
-  <div class="input-wrap">
-    <input id="typeans" class="typebox" type="text" placeholder="Введите перевод и нажмите Enter" autofocus>
-    <div id="status" class="muted"></div>
-  </div>
-
-  <!-- Панель с советом GPT -->
-  <div id="gptPanel" class="gpt hidden" aria-live="polite">
-    <div class="gpt-row">
-      <div class="gpt-badge">GPT</div>
-      <div class="gpt-text">
-        <div class="gpt-title">Рекомендация для повтора:</div>
-        <div class="gpt-body">
-          <span id="gptEase" class="gpt-ease"></span>
-          <span id="gptComment" class="gpt-comment"></span>
-        </div>
-      </div>
-    </div>
-    <div id="gptConfidence" class="gpt-confidence muted"></div>
-  </div>
-</div>
-
+<!-- Пустая передняя сторона: сразу переключаемся к обороту -->
+<div style="display:none">{{Front}}</div>
 <script>
   (function () {
-    const $ = (s) => document.querySelector(s);
-    const el = $('#typeans');
-    const status = $('#status');
-    const gptPanel = $('#gptPanel');
-    const gptEase = $('#gptEase');
-    const gptComment = $('#gptComment');
-    const gptConf = $('#gptConfidence');
-
-    function highlightEase(ease) {
-      try {
-        for (let i = 1; i <= 4; i++) {
-          const btn = document.getElementById('ease' + i);
-          if (btn) { btn.classList.remove('ease-suggest'); }
-        }
-        const target = document.getElementById('ease' + ease);
-        if (target) { target.classList.add('ease-suggest'); }
-      } catch (_) { }
-    }
-
-    function showGptAdvice({ ease, comment, confidence }) {
-      const easeMap = { 1: 'Again (1)', 2: 'Hard (2)', 3: 'Good (3)', 4: 'Easy (4)' };
-      gptEase.textContent = ease ? `Нажмите: ${easeMap[ease] || ease}` : '';
-      gptEase.classList.toggle('danger', ease === 1);
-      gptEase.classList.toggle('warn', ease === 2);
-      gptEase.classList.toggle('ok', ease === 3);
-      gptEase.classList.toggle('easy', ease === 4);
-
-      gptComment.textContent = comment ? ` — ${comment}` : '';
-      gptConf.textContent = (typeof confidence === 'number') ? `Уверенность: ${(confidence * 100).toFixed(0)}%` : '';
-
-      gptPanel.classList.remove('hidden');
-      if (ease) highlightEase(ease);
-    }
-
-    // Универсальный колбэк из аддона
-    window._ankiAddonCallback = function (msg) {
-      try {
-        const data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-        if (data && (data.ease || data.comment)) {
-          showGptAdvice(data);
-          status.textContent = '';
-          return;
-        }
-      } catch (_) { }
-      status.textContent = (msg == null ? '' : String(msg));
-    };
-
-    el.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') {
-        const txt = (el.value || '').trim();
-        if (!txt) return;
-        status.textContent = 'Оцениваю ответ...';
-        window._lastUserInput = txt;
-        pycmd('judge:' + JSON.stringify({ text: txt, t: Date.now() }));
+    try {
+      if (!window.__jumpedToBack) {
+        window.__jumpedToBack = true;
+        pycmd('ans'); // показать ответ (кнопки Again/Hard/Good/Easy станут видны)
       }
-    });
+    } catch (_) { }
   })();
 </script>
+<noscript>Включите JavaScript — карточка работает на задней стороне.</noscript>

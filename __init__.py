@@ -127,15 +127,26 @@ def _push_ui_advice(
             c = max(0.0, min(1.0, float(confidence)))
             payload["confidence"] = c
 
-        # Если нечего отправлять — не трогаем UI
         if not payload:
             return
 
         js = f"window._ankiAddonCallback({json.dumps(payload, ensure_ascii=False)});"
-        # reviewer.web может быть неготов, поэтому оборачиваем в try
         mw.reviewer.web.eval(js)
     except Exception:
         # молча: UI-подсказка — приятный бонус, не критично
+        pass
+
+
+# ---------------- ЛОГ: отправка событий в панель на карточке ----------------
+def _log_to_card(event: dict) -> None:
+    """
+    Отправить объект события в правую панель лога карточки.
+    Ожидает, что на стороне шаблона определён window._ankiLogAppend(ev).
+    """
+    try:
+        js = f"window._ankiLogAppend({json.dumps(event, ensure_ascii=False)});"
+        mw.reviewer.web.eval(js)
+    except Exception:
         pass
 
 
@@ -149,7 +160,6 @@ def on_js_message(handled, message, context):
         payload = json.loads(message[len("judge:") :])
     except Exception:
         tooltip("Ошибка: некорректный payload")
-        # Сообщим в UI, чтобы пользователь видел причину в карточке
         _push_ui_advice(comment="Ошибка: некорректный payload")
         return (True, None)
 
@@ -169,7 +179,6 @@ def on_js_message(handled, message, context):
     gold = _get_field(note, cfg["fields"]["etalon_field"])
     user_text = (payload.get("text") or "").strip()
     if not user_text or not gold:
-        # ничего не оцениваем, но UI можно подсказать
         if not user_text:
             _push_ui_advice(comment="Пустой ответ")
         return (True, None)
@@ -229,6 +238,19 @@ def on_js_message(handled, message, context):
             api_key=api_key,
         )
 
+    # --------- ЛОГ: событие request (до запуска фоновой задачи) ---------
+    try:
+        _log_to_card(
+            {
+                "kind": "request",
+                "model": model,
+                "text_len": len(user_text),
+                "ts": int(time.time() * 1000),
+            }
+        )
+    except Exception:
+        pass
+
     def on_done(fut):
         # та же карта на экране?
         cur = getattr(mw.reviewer, "card", None)
@@ -237,10 +259,22 @@ def on_js_message(handled, message, context):
         try:
             verdict = (
                 fut.result()
-            )  # dict: {category, button, comment, ease, confidence?}
+            )  # dict: {category, button, comment, ease, confidence?, usage?, cost_usd?, balance_usd?}
         except Exception as e:
             tooltip(f"GPT error: {e}")
             _push_ui_advice(comment=f"GPT error: {e}")
+            # ЛОГ: ошибка
+            try:
+                _log_to_card(
+                    {
+                        "kind": "error",
+                        "model": model,
+                        "message": str(e),
+                        "ts": int(time.time() * 1000),
+                    }
+                )
+            except Exception:
+                pass
             return
 
         if cache_ttl > 0:
@@ -256,6 +290,24 @@ def on_js_message(handled, message, context):
             comment=(verdict.get("comment") or verdict.get("category") or "").strip(),
             confidence=verdict.get("confidence"),
         )
+
+        # --------- ЛОГ: событие response (usage / cost / balance, если есть) ---------
+        try:
+            usage = verdict.get("usage") or verdict.get("_usage") or {}
+            _log_to_card(
+                {
+                    "kind": "response",
+                    "model": model,
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
+                    "cost_usd": verdict.get("cost_usd"),
+                    "balance_usd": verdict.get("balance_usd"),
+                    "ts": int(time.time() * 1000),
+                }
+            )
+        except Exception:
+            pass
 
         # Авто-ответ, если разрешено
         if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
