@@ -1,14 +1,28 @@
 <div class="viewport">
-    <!-- Сдвигаем ТОЛЬКО этот блок -->
     <div class="shift-wrap">
         <div class="card">
             <button id="logToggle" class="log-toggle" title="Показать/скрыть лог">Лог</button>
 
+            <!-- RU -->
             <div class="ru">{{Front}}</div>
 
+            <!-- Блок ответов (один стиль/размер у обоих) -->
+            <div class="answers-wrap">
+                <div id="goldSection" class="section" style="display:none">
+                    <div class="label">Эталонный перевод</div>
+                    <div class="answer-line en gold">{{Back}}</div>
+                </div>
+
+                <div class="section">
+                    <div class="label">Ваш ответ</div>
+                    <div id="userAns" class="answer-line en user"></div>
+                </div>
+            </div>
+
+            <!-- Ввод -->
             <div class="input-wrap">
-                <input id="typeans" class="typebox" type="text" placeholder="Введите перевод и нажмите Enter" autofocus>
-                <div id="status" class="muted"></div>
+                <textarea id="typeans" class="typebox" rows="2" placeholder="Введите перевод и нажмите Enter"
+                    autofocus></textarea>
             </div>
 
             <!-- Панель с советом GPT -->
@@ -26,20 +40,13 @@
                 <div id="gptConfidence" class="gpt-confidence muted"></div>
             </div>
 
-            <!-- Эталон (после ввода) -->
-            <div id="goldSection" class="section" style="display:none">
-                <div class="label">Эталонный перевод</div>
-                <div class="en gold">{{Back}}</div>
-            </div>
-
-            <div class="section">
-                <div class="label">Ваш ответ</div>
-                <div id="userAns" class="en user"></div>
-            </div>
+            <!-- История перенесена в самый низ -->
+            <div id="historyPanel" class="history-panel" aria-live="polite"
+                aria-label="История ввода (последние 3 строки)"></div>
         </div>
     </div>
 
-    <!-- Лог: фиксированный сайдбар, НЕ сдвигается -->
+    <!-- Лог сбоку -->
     <div id="logPanel" class="log-panel" aria-label="Журнал GPT">
         <div class="log-head">
             <div class="log-head-title">Журнал GPT</div>
@@ -59,11 +66,54 @@
 <script>
     (function () {
         function $(s) { return document.querySelector(s); }
-        var el = $('#typeans'), status = $('#status'), userAns = $('#userAns');
+        var el = $('#typeans'), userAns = $('#userAns');
         var gptPanel = $('#gptPanel'), gptEase = $('#gptEase'), gptComment = $('#gptComment'), gptConf = $('#gptConfidence');
         var gold = document.getElementById('goldSection');
 
-        // лог
+        /* === История (3 строки, сверху-вниз, сквозная нумерация) === */
+        var historyPanel = $('#historyPanel');
+        var HISTORY_LIMIT = 3;
+        window._lineHistory = Array.isArray(window._lineHistory) ? window._lineHistory : [];
+        window._lineCounter = Number.isInteger(window._lineCounter) ? window._lineCounter : 0;
+
+        function renderHistory() {
+            if (!historyPanel) return;
+            historyPanel.innerHTML = '';
+            if (!window._lineHistory.length) {
+                var ph = document.createElement('div');
+                ph.className = 'history-placeholder muted';
+                ph.textContent = 'История пуста';
+                historyPanel.appendChild(ph);
+                return;
+            }
+            for (var i = 0; i < window._lineHistory.length; i++) {
+                var data = window._lineHistory[i];
+                var item = document.createElement('div');
+                item.className = 'history-item muted-strong';
+
+                var num = document.createElement('span');
+                num.className = 'history-num';
+                num.textContent = data.num + '.';
+
+                var text = document.createElement('span');
+                text.className = 'history-text';
+                text.textContent = data.text;
+
+                item.appendChild(num);
+                item.appendChild(text);
+                historyPanel.appendChild(item);
+            }
+        }
+
+        function pushHistory(txt) {
+            if (!txt) return;
+            window._lineCounter += 1;
+            window._lineHistory.push({ num: window._lineCounter, text: txt });
+            if (window._lineHistory.length > HISTORY_LIMIT) window._lineHistory.shift();
+            renderHistory();
+        }
+
+        /* === Лог === */
         var logToggle = $('#logToggle'), logClear = $('#logClear'), logBody = $('#logBody');
         var elTokOut = $('#tokOut'), elTokIn = $('#tokIn'), elTokTotal = $('#tokTotal'), elCost = $('#costUSD'), elBalance = $('#balanceUSD');
         var aggOut = 0, aggIn = 0, aggTotal = 0;
@@ -102,7 +152,7 @@
                 if (elTokTotal) elTokTotal.textContent = String(aggTotal);
 
                 if (obj && typeof obj.cost_usd === 'number' && elCost) elCost.textContent = '$' + obj.cost_usd.toFixed(4);
-                if (obj && typeof obj.balance_usd === 'number' && elBalance) elBalance.textContent = '$' + obj.balance_usd.toFixed(2);
+                if (obj && typeof obj.balance_usd === 'number' && elBalance) elBalance.textContent = '$' + obj.balance_usд.toFixed(2);
             } catch (_) { }
         }
         window._ankiLogAppend = function (ev) {
@@ -131,31 +181,43 @@
             if (ease) highlightEase(ease);
         }
 
+        /* === Зелёная подсветка во время проверки === */
+        function setInputEvaluating(on) { if (el) el.classList.toggle('evaluating', !!on); }
+
+        /* === Коллбек аддона: снимаем подсветку при завершении === */
         window._ankiAddonCallback = function (msg) {
             try {
                 var d = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-                if (d && (d.ease !== undefined || d.comment !== undefined)) { showGptAdvice(d); if (status) status.textContent = ''; return; }
-            } catch (_) { }
-            if (status) status.textContent = (msg == null ? '' : String(msg));
+                if (d && (d.ease !== undefined || d.comment !== undefined)) { showGptAdvice(d); }
+            } catch (e) { /* ignore */ }
+            setInputEvaluating(false);
         };
         window._ankiAddonCallbackBack = window._ankiAddonCallback;
 
+        /* === Enter === */
         if (el) {
             el.addEventListener('keydown', function (ev) {
                 if (ev.key === 'Enter') {
-                    var txt = (el.value || '').trim(); if (!txt) return;
-                    if (status) status.textContent = 'Оцениваю ответ...';
+                    ev.preventDefault();
+                    var txt = (el.value || '').trim();
+                    if (!txt) return;
+
+                    pushHistory(txt);
+                    setInputEvaluating(true);
+
                     window._lastUserInput = txt;
                     if (userAns) userAns.textContent = txt;
                     if (gold) gold.style.display = '';
-                    if (typeof window._ankiLogAppend === 'function') { window._ankiLogAppend({ kind: 'request', text_len: txt.length }); }
-                    try { pycmd('judge:' + JSON.stringify({ text: txt, t: Date.now() })); } catch (e) { }
-                    el.select();
+                    try { pycmd('judge:' + JSON.stringify({ text: txt, t: Date.now() })); } catch (e) { setInputEvaluating(false); }
+
+                    el.value = '';
+                    focusInput();
                 }
             });
         }
 
         if (window._lastUserInput) { if (userAns) userAns.textContent = window._lastUserInput; if (gold) gold.style.display = ''; }
+        renderHistory();
 
         window.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && document.body.classList.contains('log-open')) {

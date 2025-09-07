@@ -1,27 +1,24 @@
 :root {
     --bg: #1b1f26;
-    /* фон окна: мягкий тёмно-серый */
     --plate: #242933;
-    /* фон плитки (карточки) */
     --text: #e5e9f0;
-    /* основной текст светлый */
     --muted: #9aa3b5;
-    /* приглушённый текст */
     --accent: #4f8bff;
-    /* акцент (синий) */
 
     --good: #4ade80;
     --warn: #fbbf24;
     --bad: #f87171;
     --easy: #60a5fa;
     --sep: #2f3542;
-    /* разделители */
     --radius: 16px;
     --shadow: 0 6px 20px rgba(0, 0, 0, .35);
 
     --gap: 12px;
-    --log-width: 360px;
-    --log-shift: calc(var(--log-width) - var(--gap));
+    --log-width: 250px;
+
+    /* История */
+    --history-font-size: 18px;
+    --history-line-h: 1.35;
 }
 
 /* ХОЛСТ */
@@ -31,14 +28,14 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: Inter, Segoe UI, system-ui, sans-serif;
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
 }
 
 .viewport {
     position: relative;
     min-height: 100vh;
     overflow: hidden;
-    padding: 64px 16px;
+    padding: 48px 16px;
     box-sizing: border-box
 }
 
@@ -50,15 +47,14 @@ body {
 }
 
 body.log-open .shift-wrap {
-    width: clamp(320px, calc(100vw - var(--log-width) - 64px), 720px);
-    margin-left: auto;
-    margin-right: var(--log-width);
+    width: clamp(320px, calc(100vw - 32px), 760px);
+    margin: 0 auto;
     transition: none !important;
 }
 
 .card {
     position: relative;
-    padding: 36px 28px;
+    padding: 28px 24px;
     border-radius: var(--radius);
     z-index: 0;
 }
@@ -74,25 +70,36 @@ body.log-open .shift-wrap {
 }
 
 body.log-open .card {
-    padding-right: 14px;
+    padding-right: 24px;
 }
 
 body.log-open .card::before {
-    inset: -8px -4px -8px -8px;
+    inset: -10px;
 }
 
-/* контент */
-.ru {
-    font-size: 40px;
-    font-weight: 800;
-    margin-bottom: 28px;
-    letter-spacing: .2px
+/* === ТЕКСТ: RU, ЭТАЛОН, ВАШ ОТВЕТ === */
+.ru,
+.answer-line.en.gold,
+.answer-line.en.user {
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+    font-weight: 400;
+    font-size: 28px;
+    line-height: 1.5;
+    text-align: justify;
+    text-justify: inter-word;
+    word-spacing: 0.12em;
+    hyphens: auto;
+    letter-spacing: 0;
 }
 
-.section {
-    margin-top: 18px;
-    padding-top: 14px;
-    border-top: 1px solid var(--sep)
+.answer-line.en.user {
+    color: var(--accent);
+}
+
+.answers-wrap .section {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--sep);
 }
 
 .label {
@@ -100,28 +107,10 @@ body.log-open .card::before {
     letter-spacing: .1em;
     text-transform: uppercase;
     color: var(--muted);
-    margin-bottom: 6px
+    margin-bottom: 6px;
 }
 
-.en {
-    font-size: 28px;
-    line-height: 1.4
-}
-
-.en.gold {
-    color: var(--good)
-}
-
-.en.user {
-    color: var(--accent)
-}
-
-.muted {
-    color: var(--muted);
-    font-size: 13px;
-    margin-top: 6px
-}
-
+/* Поле ввода */
 .input-wrap {
     display: flex;
     flex-direction: column;
@@ -129,16 +118,29 @@ body.log-open .card::before {
 }
 
 .typebox {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    font-size: 20px;
-    padding: 12px 14px;
-    border-radius: 12px;
-    border: 1px solid var(--sep);
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+    font-size: 26px;
+    line-height: 1.5;
+    text-align: justify;
+    text-justify: inter-word;
+    word-spacing: 0.12em;
+    height: calc(2 * 1.5em + 24px);
+    resize: none;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: #1e222b;
     color: var(--text);
+    border: 1px solid var(--sep);
+    border-radius: 12px;
+    padding: 14px 16px;
     outline: none;
+    caret-color: var(--text);
+}
+
+.typebox::placeholder {
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+    color: var(--muted);
+    opacity: .95;
 }
 
 .typebox:focus {
@@ -146,8 +148,14 @@ body.log-open .card::before {
     box-shadow: 0 0 0 3px rgba(79, 139, 255, .25)
 }
 
+.typebox.evaluating {
+    border-color: var(--good);
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, .35);
+}
+
+/* GPT */
 .gpt {
-    margin-top: 18px;
+    margin-top: 16px;
     border: 1px solid var(--sep);
     border-radius: 14px;
     padding: 12px 14px;
@@ -214,20 +222,59 @@ body.log-open .card::before {
     margin-top: 6px
 }
 
-/* подсветка */
-#ease1,
-#ease2,
-#ease3,
-#ease4 {
-    transition: box-shadow .2s, transform .2s
+/* История (внизу) */
+.history-panel {
+    margin-top: 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--sep);
+    border-radius: 12px;
+    background: #1e222b;
+    font-size: var(--history-font-size);
+    line-height: var(--history-line-h);
+    min-height: calc(3 * var(--history-line-h) * 1em);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
-.ease-suggest {
-    box-shadow: 0 0 0 3px rgba(79, 139, 255, .3), 0 0 14px rgba(79, 139, 255, .25) !important;
-    transform: translateY(-1px)
+.history-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: #c7cfde;
 }
 
-/* лог */
+.history-num {
+    width: 3.2ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+    color: #aab4c6;
+    opacity: .9;
+    user-select: none;
+}
+
+.history-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: "Calibri", "Segoe UI", "Arial", sans-serif;
+    line-height: 1.5;
+    word-spacing: 0.12em;
+}
+
+.history-placeholder {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.muted-strong {
+    color: #c7cfde;
+}
+
+/* Лог */
 .log-toggle {
     position: absolute;
     top: 10px;
@@ -339,16 +386,19 @@ body.log-open .log-panel {
 @media (max-width:760px) {
     :root {
         --log-width: 100vw;
-        --gap: 12px
+        --gap: 12px;
+        --history-font-size: 16px
     }
 
-    body.log-open .shift-wrap {
-        width: clamp(320px, calc(100vw - 32px), 760px);
-        margin: 0 auto
+    .ru,
+    .answer-line.en.gold,
+    .answer-line.en.user {
+        font-size: 24px;
     }
 
-    .ru {
-        font-size: 30px
+    .typebox {
+        font-size: 23px;
+        height: calc(2 * 1.5em + 24px);
     }
 
     .en {
@@ -356,7 +406,7 @@ body.log-open .log-panel {
     }
 
     .card {
-        padding: 24px 16px
+        padding: 22px 14px
     }
 
     .card::before {
