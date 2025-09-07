@@ -1,43 +1,46 @@
-<div class="card">
-    <!-- Кнопка открытия/закрытия лога -->
-    <button id="logToggle" class="log-toggle" title="Показать/скрыть лог">Лог</button>
+<!-- Сдвигаемый блок (карта + фон) -->
+<div class="shift-wrap">
+    <div class="card">
+        <!-- Кнопка открытия/закрытия лога -->
+        <button id="logToggle" class="log-toggle" title="Показать/скрыть лог">Лог</button>
 
-    <!-- Контент карточки -->
-    <div class="ru">{{Front}}</div>
+        <!-- Контент карточки -->
+        <div class="ru">{{Front}}</div>
 
-    <div class="input-wrap">
-        <input id="typeans" class="typebox" type="text" placeholder="Введите перевод и нажмите Enter" autofocus>
-        <div id="status" class="muted"></div>
-    </div>
+        <div class="input-wrap">
+            <input id="typeans" class="typebox" type="text" placeholder="Введите перевод и нажмите Enter" autofocus>
+            <div id="status" class="muted"></div>
+        </div>
 
-    <!-- Панель с советом GPT -->
-    <div id="gptPanel" class="gpt hidden" aria-live="polite">
-        <div class="gpt-row">
-            <div class="gpt-badge">GPT</div>
-            <div class="gpt-text">
-                <div class="gpt-title">Рекомендация для повтора:</div>
-                <div class="gpt-body">
-                    <span id="gptEase" class="gpt-ease"></span>
-                    <span id="gptComment" class="gpt-comment"></span>
+        <!-- Панель с советом GPT -->
+        <div id="gptPanel" class="gpt hidden" aria-live="polite">
+            <div class="gpt-row">
+                <div class="gpt-badge">GPT</div>
+                <div class="gpt-text">
+                    <div class="gpt-title">Рекомендация для повтора:</div>
+                    <div class="gpt-body">
+                        <span id="gptEase" class="gpt-ease"></span>
+                        <span id="gptComment" class="gpt-comment"></span>
+                    </div>
                 </div>
             </div>
+            <div id="gptConfidence" class="gpt-confidence muted"></div>
         </div>
-        <div id="gptConfidence" class="gpt-confidence muted"></div>
-    </div>
 
-    <!-- Эталон (показываем только после ввода) -->
-    <div id="goldSection" class="section" style="display:none">
-        <div class="label">Эталонный перевод</div>
-        <div class="en gold">{{Back}}</div>
-    </div>
+        <!-- Эталон (показываем только после ввода) -->
+        <div id="goldSection" class="section" style="display:none">
+            <div class="label">Эталонный перевод</div>
+            <div class="en gold">{{Back}}</div>
+        </div>
 
-    <div class="section">
-        <div class="label">Ваш ответ</div>
-        <div id="userAns" class="en user"></div>
+        <div class="section">
+            <div class="label">Ваш ответ</div>
+            <div id="userAns" class="en user"></div>
+        </div>
     </div>
 </div>
 
-<!-- Панель лога (выдвижной сайдбар справа) -->
+<!-- НЕсдвигаемая панель лога справа -->
 <div id="logPanel" class="log-panel" aria-label="Журнал GPT">
     <div class="log-head">
         <div class="log-head-title">Журнал GPT</div>

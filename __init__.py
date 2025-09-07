@@ -6,7 +6,7 @@ import secrets
 import time
 import unicodedata
 from collections import OrderedDict
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from aqt import gui_hooks, mw
 from aqt.utils import tooltip
@@ -115,6 +115,7 @@ def _push_ui_advice(
     """
     Посылает совет в шаблон через window._ankiAddonCallback({...}),
     чтобы отрисовать панель «GPT» и подсветить ease-кнопку.
+    Плюс подсвечивает нижние кнопки ревьюера.
     """
     try:
         payload: Dict[str, Any] = {}
@@ -128,10 +129,16 @@ def _push_ui_advice(
             payload["confidence"] = c
 
         if not payload:
+            # даже если нечего отправлять в карточку — снимем подсветку снизу
+            _highlight_bottom_ease(None)
             return
 
+        # 1) В карточку (панель GPT)
         js = f"window._ankiAddonCallback({json.dumps(payload, ensure_ascii=False)});"
         mw.reviewer.web.eval(js)
+
+        # 2) В нижнюю панель — подсветить кнопку
+        _highlight_bottom_ease(payload.get("ease"))
     except Exception:
         # молча: UI-подсказка — приятный бонус, не критично
         pass
@@ -216,7 +223,7 @@ def on_js_message(handled, message, context):
             ease = _ease_from_verdict(cached)
             tip = _tooltip_from_verdict(cached)
             tooltip(f"GPT(кеш): {tip}")
-            # Отправим и в UI
+            # Отправим и в UI (карточка + подсветка низа)
             _push_ui_advice(
                 ease=ease,
                 comment=(cached.get("comment") or cached.get("category") or "").strip(),
@@ -284,7 +291,7 @@ def on_js_message(handled, message, context):
         tip = _tooltip_from_verdict(verdict)
         tooltip(f"GPT: {tip}")
 
-        # Посылаем в UI карточки
+        # Посылаем в UI карточки + подсветка нижних кнопок
         _push_ui_advice(
             ease=ease,
             comment=(verdict.get("comment") or verdict.get("category") or "").strip(),

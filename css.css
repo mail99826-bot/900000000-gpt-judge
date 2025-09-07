@@ -15,7 +15,7 @@
     --log-width: 380px;
     /* ширина панели лога */
     --log-shift: 190px;
-    /* сдвиг карты влево при открытом логе */
+    /* сдвиг при открытом логе */
 }
 
 /* === БАЗА === */
@@ -33,17 +33,17 @@ body {
     box-shadow: var(--shadow);
     padding: 36px 28px;
     position: relative;
-    transition: transform .25s ease;
 }
 
-.content {
+/* Сдвигаем ТОЛЬКО содержимое (карта + фон), лог остаётся фиксированным */
+.shift-wrap {
     transition: transform .25s ease;
+    will-change: transform;
 }
 
-body.log-open .content {
+body.log-open .shift-wrap {
     transform: translateX(calc(-1 * var(--log-shift)));
 }
-
 
 .ru {
     font-size: 40px;
@@ -227,7 +227,7 @@ body.log-open .content {
     opacity: 1
 }
 
-/* Панель лога — сайдбар справа */
+/* Панель лога — сайдбар справа, fixed к окну */
 .log-panel {
     position: fixed;
     top: 0;
