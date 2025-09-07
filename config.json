@@ -2,7 +2,7 @@
   "openai_api_key": "",
   "model": "gpt-4o-mini",
   "timeout_sec": 12,
-  "auto_answer": false,
+  "auto_answer": true,
   "fields": {
     "etalon_field": "Back"
   },

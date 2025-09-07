@@ -1,8 +1,11 @@
 import hashlib
 import json
+import os
 import re
+import secrets
 import time
 import unicodedata
+from collections import OrderedDict
 
 from aqt import gui_hooks, mw
 from aqt.utils import tooltip
@@ -10,20 +13,20 @@ from aqt.utils import tooltip
 from .gpt_client import GPTError, judge_text
 from .logic import get_cfg, map_to_ease
 
-LAST_CALL = {}
-LAST_REQUEST_TS = 0.0
-CACHE = {}
+# LRU-кеш (в памяти). Значение: (ts, verdict_dict).
+CACHE: "OrderedDict[str, tuple]" = OrderedDict()
+CACHE_MAX = 500
+_SALT = secrets.token_bytes(16)
 
-MIN_INTERVAL_SEC = 2.0
-ANTI_DUP_WINDOW_SEC = 6.0
+LAST_REQUEST_TS = 0.0
 
 _ws_re = re.compile(r"\s+")
 _p_space = re.compile(r"\s+([,.:;!?])")
 
 
 def _norm(s):
-    s = (s or "").strip()
-    s = unicodedata.normalize("NFC", s)
+    s = (s or "").strip().lower()
+    s = unicodedata.normalize("NFKC", s)
     s = _ws_re.sub(" ", s)
     s = _p_space.sub(r"\1", s)
     return s
@@ -32,19 +35,46 @@ def _norm(s):
 def _get_field(note, name):
     try:
         return (note[name] or "").strip()
-    except KeyError:
+    except Exception:
         return ""
 
 
 def _cache_key(user, gold):
+    # соль, чтобы по ключу нельзя было догадаться о содержимом
     h = hashlib.sha256()
+    h.update(_SALT)
     h.update(user.encode("utf-8", errors="ignore"))
     h.update(b"\0")
     h.update(gold.encode("utf-8", errors="ignore"))
     return h.hexdigest()
 
 
+def _cache_get(k, now, ttl):
+    v = CACHE.get(k)
+    if not v:
+        return None
+    ts, payload = v
+    if now - ts >= ttl:
+        try:
+            del CACHE[k]
+        except KeyError:
+            pass
+        return None
+    # LRU: помечаем как недавно использованный
+    CACHE.move_to_end(k)
+    return payload
+
+
+def _cache_put(k, payload, now):
+    CACHE[k] = (now, payload)
+    CACHE.move_to_end(k)
+    while len(CACHE) > CACHE_MAX:
+        # удаляем самый старый
+        CACHE.popitem(last=False)
+
+
 def on_js_message(handled, message, context):
+    # ожидаем строку вида "judge:{...json...}"
     if not isinstance(message, str) or not message.startswith("judge:"):
         return handled
 
@@ -71,10 +101,11 @@ def on_js_message(handled, message, context):
     if not user_text or not gold:
         return (True, None)
 
-    user_text = _norm(user_text)
-    gold = _norm(gold)
+    user_norm = _norm(user_text)
+    gold_norm = _norm(gold)
 
-    if _norm(user_text) == _norm(gold):
+    # быстрый путь: точное совпадение после нормализации
+    if user_norm == gold_norm and gold_norm:
         ease = 4
         tooltip("Exact match → Easy")
         if cfg.get("auto_answer", True):
@@ -84,27 +115,21 @@ def on_js_message(handled, message, context):
                 pass
         return (True, None)
 
+    # анти-флуд (порог 0.5s между запросами к модели)
     global LAST_REQUEST_TS
     now = time.time()
-    if now - LAST_REQUEST_TS < MIN_INTERVAL_SEC:
-        tooltip("Слишком часто (анти-флуд)")
+    if now - LAST_REQUEST_TS < 0.5:
         return (True, None)
     LAST_REQUEST_TS = now
 
-    short_key = f"{card.id}:{hashlib.sha1(user_text.encode('utf8')).hexdigest()}"
-    if short_key in LAST_CALL and now - LAST_CALL[short_key] < ANTI_DUP_WINDOW_SEC:
-        return (True, None)
-    LAST_CALL[short_key] = now
-
-    cache_key = (
-        f"{card.id}:{hashlib.sha1((gold + '|' + user_text).encode('utf8')).hexdigest()}"
-    )
+    # кэш по содержимому
     cache_ttl = int(cfg.get("cache_ttl_sec", 600))
-    if cache_ttl > 0 and cache_key in CACHE:
-        ts, v = CACHE[cache_key]
-        if now - ts < cache_ttl:
-            ease = map_to_ease(v.get("ease"))
-            comment = (v.get("comment") or "").strip()
+    ckey = _cache_key(user_norm, gold_norm)
+    if cache_ttl > 0:
+        cached = _cache_get(ckey, now, cache_ttl)
+        if cached:
+            ease = map_to_ease(cached.get("ease"))
+            comment = (cached.get("comment") or "").strip()
             label = (
                 ["Again", "Hard", "Good", "Easy"][ease - 1]
                 if ease in (1, 2, 3, 4)
@@ -124,19 +149,20 @@ def on_js_message(handled, message, context):
 
     def work():
         return judge_text(
-            user_text=user_text,
-            gold_text=gold,
+            user_text=user_text[: cfg.get("max_input_len", 800)],
+            gold_text=gold[: cfg.get("max_gold_len", 800)],
             model=cfg.get("model", "gpt-4o-mini"),
             temperature=cfg.get("temperature", 0.3),
             max_tokens=cfg.get("max_tokens", 64),
             timeout=cfg.get("timeout_sec", 12),
             api_key=api_key,
             base_url=cfg.get("base_url", "https://api.openai.com/v1/"),
-            retries=cfg.get("retries", 1),
-            backoff_ms=cfg.get("backoff_ms", [400]),
+            retries=cfg.get("retries", 2),
+            backoff_ms=cfg.get("backoff_ms", [300, 800]),
         )
 
     def on_done(fut):
+        # та же карта на экране?
         cur = getattr(mw.reviewer, "card", None)
         if not cur or cur.id != requested_card_id:
             return
@@ -147,7 +173,7 @@ def on_js_message(handled, message, context):
             return
 
         if cache_ttl > 0:
-            CACHE[cache_key] = (time.time(), verdict)
+            _cache_put(ckey, verdict, time.time())
 
         ease = map_to_ease(verdict.get("ease"))
         comment = (verdict.get("comment") or "").strip()
