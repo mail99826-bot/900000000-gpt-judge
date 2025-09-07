@@ -1,154 +1,189 @@
 :root {
     --bg: #0f1115;
-    --card: #1b1f2b;
+    --card: #171b24;
     --text: #e9edf5;
     --muted: #a9b3c7;
     --accent: #7aa2ff;
-    --bad: #ff5c77;
     --good: #4ade80;
-    --missed: #facc15;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+    --easy: #60a5fa;
     --sep: #2c3244;
-    --shadow: 0 10px 30px rgba(0, 0, 0, .4);
     --radius: 16px;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
 }
 
-/* База карточки */
-.card {
+html,
+body {
     background: var(--bg);
     color: var(--text);
-    font-family: "Segoe UI", Roboto, sans-serif;
-    font-size: 22px;
-    padding: 36px 22px;
 }
 
-/* Контейнер */
-.trainer {
-    max-width: 900px;
-    margin: 6vh auto;
+.card {
+    max-width: 760px;
+    margin: 24px auto;
     background: var(--card);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 48px 32px;
-    text-align: center;
+    padding: 36px 28px;
 }
 
-/* Русский текст */
 .ru {
-    font-size: 42px;
+    font-size: 40px;
     font-weight: 800;
-    margin-bottom: 36px;
-    /* ровный зазор до поля */
+    margin-bottom: 28px;
+    letter-spacing: .2px
 }
 
-/* Поле */
+.section {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--sep)
+}
+
+.label {
+    font-size: 12px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px
+}
+
+.en {
+    font-size: 28px;
+    line-height: 1.4
+}
+
+.en.gold {
+    color: var(--good)
+}
+
+.en.user {
+    color: #9cc2ff
+}
+
+.muted {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 6px
+}
+
 .input-wrap {
     display: flex;
-    justify-content: center;
-    margin-bottom: 36px;
-    /* симметрия сверху и снизу */
-    width: 100%;
+    flex-direction: column;
+    gap: 8px
 }
 
-#typeans,
-.typebox,
-#typeans span,
-.typeGood,
-.typeBad,
-.typeMissed {
-    font-size: 44px !important;
-    line-height: 1.5;
-    font-family: "Fira Code", Consolas, Menlo, monospace !important;
-}
-
-#typeans,
 .typebox {
-    padding: 28px 32px;
-    border-radius: 18px;
-    border: 2px solid var(--sep);
-    background: #10131b;
+    width: 100%;
+    font-size: 20px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--sep);
+    background: #0e121a;
     color: var(--text);
-    box-sizing: border-box;
-    transition: box-shadow .15s ease, border-color .15s ease;
-    text-align: center;
-    /* текст тоже по центру */
+    outline: none
 }
 
-#typeans:focus,
 .typebox:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 5px rgba(122, 162, 255, .35);
-    outline: none;
+    border-color: #2b6fff;
+    box-shadow: 0 0 0 4px rgba(122, 162, 255, .15)
 }
 
-/* Убираем подсказку */
-.hint {
-    display: none !important;
+.gpt {
+    margin-top: 18px;
+    border: 1px solid var(--sep);
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #0e121a
 }
 
-/* Разделитель */
-.sep {
-    border: none;
-    border-top: 1px solid var(--sep);
-    margin: 36px auto;
-    width: 80%;
-    /* чуть уже для симметрии */
+.hidden {
+    display: none
 }
 
-/* Заголовок блока ответа */
-.label {
-    color: var(--muted);
-    font-size: 16px;
-    text-transform: uppercase;
-    letter-spacing: .1em;
-    margin-bottom: 16px;
+.gpt-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start
 }
 
-/* Ответ */
-.en {
-    font-size: 42px;
+.gpt-badge {
+    background: var(--accent);
+    color: #081225;
     font-weight: 800;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px
 }
 
-/* Подсветка Anki */
-.typeGood {
-    background: rgba(74, 222, 128, 0.15);
+.gpt-title {
+    font-weight: 700;
+    margin-bottom: 2px
+}
+
+.gpt-body {
+    font-size: 14px
+}
+
+.gpt-ease {
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-right: 6px;
+    border: 1px solid var(--sep)
+}
+
+.gpt-ease.ok {
     color: var(--good);
-    border-radius: 6px;
-    padding: 4px 6px;
+    border-color: rgba(74, 222, 128, .6)
 }
 
-.typeBad {
-    background: rgba(255, 92, 119, 0.15);
+.gpt-ease.warn {
+    color: var(--warn);
+    border-color: rgba(245, 158, 11, .6)
+}
+
+.gpt-ease.danger {
     color: var(--bad);
-    border-radius: 6px;
-    padding: 4px 6px;
+    border-color: rgba(239, 68, 68, .6)
 }
 
-.typeMissed {
-    background: rgba(250, 204, 21, 0.15);
-    color: var(--missed);
-    border-radius: 6px;
-    padding: 4px 6px;
+.gpt-ease.easy {
+    color: var(--easy);
+    border-color: rgba(96, 165, 250, .6)
 }
 
-/* Адаптив */
-@media (max-width: 640px) {
-    .trainer {
-        padding: 32px 16px;
-    }
+.gpt-comment {
+    opacity: .9
+}
 
+.gpt-confidence {
+    margin-top: 6px
+}
+
+#ease1,
+#ease2,
+#ease3,
+#ease4 {
+    transition: box-shadow .2s, transform .2s
+}
+
+.ease-suggest {
+    box-shadow: 0 0 0 3px rgba(122, 162, 255, .35), 0 0 18px rgba(122, 162, 255, .35) !important;
+    transform: translateY(-1px)
+}
+
+@media (max-width:600px) {
     .ru {
-        font-size: 32px;
-        margin-bottom: 24px;
-    }
-
-    #typeans,
-    .typebox {
-        font-size: 28px;
-        width: 100% !important;
+        font-size: 30px
     }
 
     .en {
-        font-size: 34px;
+        font-size: 22px
+    }
+
+    .card {
+        padding: 24px 16px
     }
 }

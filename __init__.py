@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import hashlib
 import json
 import re
@@ -5,6 +6,7 @@ import secrets
 import time
 import unicodedata
 from collections import OrderedDict
+from typing import Any, Dict, Optional, Tuple
 
 from aqt import gui_hooks, mw
 from aqt.utils import tooltip
@@ -12,7 +14,7 @@ from aqt.utils import tooltip
 from .gpt_client import GPTError, judge_text
 from .logic import get_cfg, map_to_ease
 
-# LRU-кеш (в памяти). Значение: (ts, verdict_dict).
+# ---------------- LRU-кеш ----------------
 CACHE: "OrderedDict[str, tuple]" = OrderedDict()
 CACHE_MAX = 500
 _SALT = secrets.token_bytes(16)
@@ -106,6 +108,38 @@ def _ease_from_verdict(verdict: dict) -> int:
     return m.get(btn, 0)
 
 
+# ---------------- Отправка в UI карточки ----------------
+def _push_ui_advice(
+    ease: Optional[int] = None, comment: str = "", confidence: Optional[float] = None
+) -> None:
+    """
+    Посылает совет в шаблон через window._ankiAddonCallback({...}),
+    чтобы отрисовать панель «GPT» и подсветить ease-кнопку.
+    """
+    try:
+        payload: Dict[str, Any] = {}
+        if ease in (1, 2, 3, 4):
+            payload["ease"] = int(ease)
+        if comment:
+            payload["comment"] = str(comment)
+        if isinstance(confidence, (int, float)):
+            # ограничим в [0,1]
+            c = max(0.0, min(1.0, float(confidence)))
+            payload["confidence"] = c
+
+        # Если нечего отправлять — не трогаем UI
+        if not payload:
+            return
+
+        js = f"window._ankiAddonCallback({json.dumps(payload, ensure_ascii=False)});"
+        # reviewer.web может быть неготов, поэтому оборачиваем в try
+        mw.reviewer.web.eval(js)
+    except Exception:
+        # молча: UI-подсказка — приятный бонус, не критично
+        pass
+
+
+# ---------------- Основной обработчик ----------------
 def on_js_message(handled, message, context):
     # ожидаем строку вида "judge:{...json...}"
     if not isinstance(message, str) or not message.startswith("judge:"):
@@ -115,6 +149,8 @@ def on_js_message(handled, message, context):
         payload = json.loads(message[len("judge:") :])
     except Exception:
         tooltip("Ошибка: некорректный payload")
+        # Сообщим в UI, чтобы пользователь видел причину в карточке
+        _push_ui_advice(comment="Ошибка: некорректный payload")
         return (True, None)
 
     reviewer = mw.reviewer
@@ -126,12 +162,16 @@ def on_js_message(handled, message, context):
     api_key = (cfg.get("openai_api_key") or "").strip()
     if not api_key:
         tooltip("⚠ Укажи openai_api_key в настройках аддона")
+        _push_ui_advice(comment="Укажи openai_api_key в настройках аддона")
         return (True, None)
 
     note = card.note()
     gold = _get_field(note, cfg["fields"]["etalon_field"])
     user_text = (payload.get("text") or "").strip()
     if not user_text or not gold:
+        # ничего не оцениваем, но UI можно подсказать
+        if not user_text:
+            _push_ui_advice(comment="Пустой ответ")
         return (True, None)
 
     user_norm = _norm(user_text)
@@ -139,9 +179,10 @@ def on_js_message(handled, message, context):
 
     # быстрый путь: точное совпадение после нормализации
     if user_norm == gold_norm and gold_norm:
-        # Совместимость со старой логикой: сразу Easy
         ease = 4
-        tooltip("Exact match → Easy")
+        tip = "Exact match → Easy"
+        tooltip(tip)
+        _push_ui_advice(ease=ease, comment="Точное совпадение")
         if cfg.get("auto_answer", True):
             try:
                 mw.reviewer._answerCard(ease)
@@ -166,6 +207,12 @@ def on_js_message(handled, message, context):
             ease = _ease_from_verdict(cached)
             tip = _tooltip_from_verdict(cached)
             tooltip(f"GPT(кеш): {tip}")
+            # Отправим и в UI
+            _push_ui_advice(
+                ease=ease,
+                comment=(cached.get("comment") or cached.get("category") or "").strip(),
+                confidence=cached.get("confidence"),
+            )
             if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
                 try:
                     mw.reviewer._answerCard(ease)
@@ -188,9 +235,12 @@ def on_js_message(handled, message, context):
         if not cur or cur.id != requested_card_id:
             return
         try:
-            verdict = fut.result()  # dict: {category, button, comment, ease}
+            verdict = (
+                fut.result()
+            )  # dict: {category, button, comment, ease, confidence?}
         except Exception as e:
             tooltip(f"GPT error: {e}")
+            _push_ui_advice(comment=f"GPT error: {e}")
             return
 
         if cache_ttl > 0:
@@ -200,6 +250,14 @@ def on_js_message(handled, message, context):
         tip = _tooltip_from_verdict(verdict)
         tooltip(f"GPT: {tip}")
 
+        # Посылаем в UI карточки
+        _push_ui_advice(
+            ease=ease,
+            comment=(verdict.get("comment") or verdict.get("category") or "").strip(),
+            confidence=verdict.get("confidence"),
+        )
+
+        # Авто-ответ, если разрешено
         if cfg.get("auto_answer", True) and ease in (1, 2, 3, 4):
             try:
                 mw.reviewer._answerCard(ease)

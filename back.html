@@ -1,12 +1,71 @@
 {{Front}}
-<hr>
-<b>Эталонный перевод:</b><br>
-<div style="font-size:18px;color:darkgreen">{{Back}}</div>
-<hr>
-<b>Ваш ответ:</b><br>
-<div id="userAns" style="font-size:18px;color:blue"></div>
+<div class="card">
+    <div class="ru">{{Front}}</div>
+
+    <div class="section">
+        <div class="label">Эталонный перевод</div>
+        <div class="en gold">{{Back}}</div>
+    </div>
+
+    <div class="section">
+        <div class="label">Ваш ответ</div>
+        <div id="userAns" class="en user"></div>
+    </div>
+
+    <div id="gptPanel" class="gpt hidden" aria-live="polite">
+        <div class="gpt-row">
+            <div class="gpt-badge">GPT</div>
+            <div class="gpt-text">
+                <div class="gpt-title">Рекомендация для повтора:</div>
+                <div class="gpt-body">
+                    <span id="gptEase" class="gpt-ease"></span>
+                    <span id="gptComment" class="gpt-comment"></span>
+                </div>
+            </div>
+        </div>
+        <div id="gptConfidence" class="gpt-confidence muted"></div>
+    </div>
+</div>
+
 <script>
-    if (window._lastUserInput) {
-        document.getElementById('userAns').textContent = window._lastUserInput;
-    }
+    (function () {
+        const $ = (s) => document.querySelector(s);
+        const userAns = $('#userAns');
+        if (window._lastUserInput) { userAns.textContent = window._lastUserInput; }
+
+        const gptPanel = $('#gptPanel');
+        const gptEase = $('#gptEase');
+        const gptComment = $('#gptComment');
+        const gptConf = $('#gptConfidence');
+
+        function highlightEase(ease) {
+            try {
+                for (let i = 1; i <= 4; i++) {
+                    const btn = document.getElementById('ease' + i);
+                    if (btn) { btn.classList.remove('ease-suggest'); }
+                }
+                const target = document.getElementById('ease' + ease);
+                if (target) { target.classList.add('ease-suggest'); }
+            } catch (_) { }
+        }
+
+        function showGptAdvice({ ease, comment, confidence }) {
+            const easeMap = { 1: 'Again (1)', 2: 'Hard (2)', 3: 'Good (3)', 4: 'Easy (4)' };
+            gptEase.textContent = ease ? `Нажмите: ${easeMap[ease] || ease}` : '';
+            gptEase.classList.toggle('danger', ease === 1);
+            gptEase.classList.toggle('warn', ease === 2);
+            gptEase.classList.toggle('ok', ease === 3);
+            gptEase.classList.toggle('easy', ease === 4);
+
+            gptComment.textContent = comment ? ` — ${comment}` : '';
+            gptConf.textContent = (typeof confidence === 'number') ? `Уверенность: ${(confidence * 100).toFixed(0)}%` : '';
+
+            gptPanel.classList.remove('hidden');
+            if (ease) highlightEase(ease);
+        }
+
+        window._ankiAddonCallbackBack = function (msg) {
+            try { showGptAdvice(typeof msg === 'string' ? JSON.parse(msg) : msg); } catch (_) { }
+        };
+    })();
 </script>
