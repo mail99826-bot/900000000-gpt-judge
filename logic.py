@@ -4,7 +4,7 @@ DEFAULT_CFG = {
     "openai_api_key": "",
     "model": "gpt-4o-mini",
     "timeout_sec": 12,
-    "auto_answer": True,
+    "auto_answer": False,
     # Поля заметки (оставили только эталон)
     "fields": {"etalon_field": "Back"},
     # Кеш ответов (сек) (0 = отключить)
@@ -14,10 +14,10 @@ DEFAULT_CFG = {
     "max_gold_len": 800,
     # Сеть/ретраи
     "base_url": "https://api.openai.com/v1/",
-    "retries": 2,
+    "retries": 1,
     "backoff_ms": [300, 800],
     # Параметры генерации модели
-    "temperature": 0.3,
+    "temperature": 0.0,
     "max_tokens": 64,
 }
 

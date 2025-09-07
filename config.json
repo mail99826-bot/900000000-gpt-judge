@@ -3,7 +3,7 @@
   "model": "gpt-4o-mini",
   "temperature": 0.0,
   "top_p": 1.0,
-  "max_tokens": 128,
+  "max_tokens": 64,
   "timeout_sec": 12,
   "auto_answer": false,
   "fields": {
@@ -13,10 +13,10 @@
   "max_input_len": 800,
   "max_gold_len": 800,
   "base_url": "https://api.aitunnel.ru/v1/",
-  "retries": 0,
+  "retries": 1,
   "backoff_ms": [
-    500,
-    1000
+    300,
+    800
   ],
   "pad_min_tokens": 1024,
   "pad_piece": " [PAD]",
